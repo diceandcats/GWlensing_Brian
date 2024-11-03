@@ -133,3 +133,63 @@ class ClusterLensing:
         for i in range(len(x_img)):
             dt.append(t[i] - min(t))
         return dt
+    
+    def chi_squared(self, x_src, y_src, dt_true, mag_true, sigma = 0.05, index=0):
+        """
+        Calculate the chi-squared value for a given source position.
+
+        Parameters:
+        -----------
+        x_src: float
+            x coordinates of the source in arcsec.
+        y_src: float
+            y coordinates of the source in arcsec.
+        mag_true: list
+            List of true magnifications of the image in arcsec.
+        dt_true: list
+            List of true time delays of the image in arcsec.
+        sigma: float
+            The error in the time delay.
+        index: int
+            Index of the deflection map set to use (0 to 5).
+        """
+        img = self.image_position(x_src, y_src, index)
+        t = self.time_delay(img[0], img[1], index, x_src, y_src)
+        dt = []
+        for i in range(len(img[0])):
+            dt.append(t[i] - min(t))
+
+        chi_sq = 0
+        for i in range(len(img[0])):
+            chi_sq += (dt[i] - dt_true[i])**2
+        chi_sq /= -2*sigma**2
+        return chi_sq
+    
+    def localize(self, x_img, y_img, x_src, y_src):
+        """
+        Find the source position by minimizing the chi-squared value 
+        and find which index of cluster does the source located in.
+
+        Parameters:
+        -----------
+        x_img: list
+            List of x coordinates of the image in arcsec.
+        y_img: list
+            List of y coordinates of the image in arcsec.
+        x_src: float
+            The x coordinate of the source in arcsec.
+        y_src: float
+            The y coordinate of the source in arcsec.
+        index: int
+            Index of the deflection map set to use (0 to 5).
+        """
+        chi_sq = []
+        for i in range(6):
+            index = i
+            result = minimize.minimize(self.chi_squared, x_src, y_src, args=(x_img, y_img, index),method='L-BFGS-B',
+                tol=1e-9)
+            chi_sq.append(result.fun)
+        
+        min_chi_sq = min(chi_sq)
+        return chi_sq.index(min_chi_sq), result.x[0], result.x[1], min_chi_sq
+        

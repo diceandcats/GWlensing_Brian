@@ -6,7 +6,7 @@ from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 
 
-print("Please input the index of the name of the galaxy cluster for placing the source listed: \nAbell 370, Abell 2744, Abell S1063, MACS0416, MACS0717, MACS1149")
+print("Please input the index(0-5) of the name of the galaxy cluster for placing the source listed: \nAbell 370, Abell 2744, Abell S1063, MACS0416, MACS0717, MACS1149")
 cluster_index = input()
 print("Please input the source and lens redshifts separated by a comma: ")
 z_s, z_l = input().split(',')
@@ -15,12 +15,12 @@ z_l = float(z_l)
 
 # 6 cases
 scenarios = {
-    '1': 'abell370',
-    '2': 'abell2744',
-    '3': 'abells1063',
-    '4': 'macs0416',
-    '5': 'macs0717',
-    '6': 'macs1149'
+    '0': 'abell370',
+    '1': 'abell2744',
+    '2': 'abells1063',
+    '3': 'macs0416',
+    '4': 'macs0717',
+    '5': 'macs1149'
 }
 
 full_cluster_names = {
@@ -82,13 +82,14 @@ src_pos = src_pos.split(',')
 src_pos = list(map(float, src_pos))
 #print(src_pos)
 
-img_pos = solver.image_position_from_source(src_pos[0], src_pos[1], kwargs_lens, 
-                                            min_distance=pixscale, search_window=100, 
-                                            verbose=False, x_center=75, y_center=80)
+x_center, y_center = [90,75,110,70,110,70], [70,80,95,60,110,65]
+img_pos = solver.image_position_from_source(src_pos[0], src_pos[1], kwargs_lens,
+                                            min_distance=pixscale, search_window=100,
+                                            verbose=False, x_center=x_center[int(cluster_index)], y_center=y_center[int(cluster_index)])
 #print(f'Image positions: {img_pos}')
 mag = lensModel.magnification(img_pos[0], img_pos[1], kwargs_lens)
 #print(f'Magnification: {mag}')
-t = lensModel.arrival_time(img_pos[0], img_pos[1], kwargs_lens, 
+t = lensModel.arrival_time(img_pos[0], img_pos[1], kwargs_lens,
                            x_source=src_pos[0], y_source=src_pos[1])
 dt = []
 for i in range(len(img_pos[0])):
