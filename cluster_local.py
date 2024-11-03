@@ -1,8 +1,6 @@
 from math import ceil, floor
-import os
 import numpy as np
 #import matplotlib.pyplot as plt
-from sklearn.cluster import DBSCAN
 import scipy.optimize._minimize as minimize
 from astropy.cosmology import FlatLambdaCDM
 import lenstronomy.Util.constants as const
@@ -186,7 +184,8 @@ class ClusterLensing:
         chi_sq = []
         for i in range(6):
             index = i
-            result = minimize.minimize(self.chi_squared, x_src, y_src, args=(x_img, y_img, index),method='L-BFGS-B',
+            src_guess = [x_src, y_src]
+            result = minimize.minimize(self.chi_squared, src_guess, args=(x_img, y_img, index),method='L-BFGS-B',
                 tol=1e-9)
             chi_sq.append(result.fun)
         
