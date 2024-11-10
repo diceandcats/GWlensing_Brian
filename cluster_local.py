@@ -1,7 +1,7 @@
 from math import ceil, floor
 import numpy as np
 #import matplotlib.pyplot as plt
-import scipy.optimize._minimize as minimize
+from scipy.optimize import minimize
 from astropy.cosmology import FlatLambdaCDM
 import lenstronomy.Util.constants as const
 import pandas as pd
@@ -9,7 +9,7 @@ from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 
 # pylint: disable=C0103
-class ClusterLensing:
+class ClusterLensing_fyp:
     """
     Class for localization
     """
@@ -24,7 +24,7 @@ class ClusterLensing:
         lens_potential_maps: List of 6 lens potential maps in arcsec^2.
         z_l: The redshift of the lens.
         z_s: The redshift of the source.
-        pixscale: The pixel scale.
+        pixscale: The list of pixel scales for each cluster.
         diff_z: Boolean indicating if differential redshift scaling is applied.
         """
         self.alpha_maps_x = alpha_maps_x    # List of arrays
@@ -37,6 +37,8 @@ class ClusterLensing:
         self.magnifications = None
         self.time_delays = None
         self.diff_z = diff_z
+
+        self.x_center, self.y_center = [90,75,110,70,110,70], [70,80,95,60,110,65]
 
         # get the size of the deflection maps
         self.size = []
@@ -101,11 +103,9 @@ class ClusterLensing:
             Index of the deflection map set to use (0 to 5).
         """
         kwargs = self.kwargs_list[index]
-        size = self.size[index]
-        search_start = size/2*self.pixscale[index]
         image_positions = self.solver.image_position_from_source(
             x_src, y_src, [kwargs], min_distance=self.pixscale[index],
-            search_window=100, verbose=False, x_center=search_start, y_center=search_start)
+            search_window=100, verbose=False, x_center=self.x_center[int(index)], y_center=self.y_center[int(index)])
         return image_positions
     
     def time_delay(self,x_img, y_img, index=0, x_src=None, y_src=None):
@@ -132,16 +132,14 @@ class ClusterLensing:
             dt.append(t[i] - min(t))
         return dt
     
-    def chi_squared(self, x_src, y_src, dt_true, mag_true, sigma = 0.05, index=0):
+    def chi_squared(self, src_guess, dt_true,  index=0, sigma = 0.05):
         """
         Calculate the chi-squared value for a given source position.
 
         Parameters:
         -----------
-        x_src: float
-            x coordinates of the source in arcsec.
-        y_src: float
-            y coordinates of the source in arcsec.
+        src_guess: list
+            guess coordinates of the source in arcsec.
         mag_true: list
             List of true magnifications of the image in arcsec.
         dt_true: list
@@ -151,19 +149,30 @@ class ClusterLensing:
         index: int
             Index of the deflection map set to use (0 to 5).
         """
+        x_src, y_src = src_guess
         img = self.image_position(x_src, y_src, index)
         t = self.time_delay(img[0], img[1], index, x_src, y_src)
         dt = []
         for i in range(len(img[0])):
             dt.append(t[i] - min(t))
 
+        # Determine the lengths of dt and dt_true
+        len_dt = len(dt)
+        len_dt_true = len(dt_true)
+
+        # if the lengths are not equal, pad the shorter list with zeros
+        if len_dt < len_dt_true:
+            dt += [0] * (len_dt_true - len_dt)
+        elif len_dt_true < len_dt:
+            dt_true += [0] * (len_dt - len_dt_true)
+
         chi_sq = 0
-        for i in range(len(img[0])):
+        for i in range(len(dt_true)):
             chi_sq += (dt[i] - dt_true[i])**2
-        chi_sq /= -2*sigma**2
+        chi_sq /= 2*sigma**2                      # make positive for minimization
         return chi_sq
     
-    def localize(self, x_img, y_img, x_src, y_src):
+    def localize(self, x_src_guess, y_src_guess, dt_true):
         """
         Find the source position by minimizing the chi-squared value 
         and find which index of cluster does the source located in.
@@ -184,11 +193,37 @@ class ClusterLensing:
         chi_sq = []
         for i in range(6):
             index = i
-            src_guess = [x_src, y_src]
-            result = minimize.minimize(self.chi_squared, src_guess, args=(x_img, y_img, index),method='L-BFGS-B',
-                tol=1e-9)
+            src_guess = [x_src_guess, y_src_guess]
+            result = minimize(self.chi_squared, src_guess, args=(dt_true, index),method='L-BFGS-B',
+                tol=1e-7)
             chi_sq.append(result.fun)
         
         min_chi_sq = min(chi_sq)
         return chi_sq.index(min_chi_sq), result.x[0], result.x[1], min_chi_sq
+    
+    def localize_known_cluster(self, x_src_guess, y_src_guess, dt_true, index=1):
+        """
+        Find the source position by minimizing the chi-squared value 
+        and find which index of cluster does the source located in.
+
+        Parameters:
+        -----------
+        x_img: list
+            List of x coordinates of the image in arcsec.
+        y_img: list
+            List of y coordinates of the image in arcsec.
+        x_src: float
+            The x coordinate of the source in arcsec.
+        y_src: float
+            The y coordinate of the source in arcsec.
+        index: int
+            Index of the deflection map set to use (0 to 5).
+        """
+        i = index
+        src_guess = [x_src_guess, y_src_guess]
+        result = minimize(self.chi_squared, src_guess, args=(dt_true, i),method='Nelder-Mead',
+            tol=1)
+
+        min_chi_sq = result.fun
+        return result.x[0], result.x[1], min_chi_sq
         
