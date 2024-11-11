@@ -18,3 +18,4 @@ TypeError: '<=' not supported between instances of 'list' and 'tuple'
 2024-11-11 03:15:52,193 - pyswarms.single.global_best - INFO - Optimize for 100 iters with {'c1': 0.7, 'c2': 0.3, 'w': 0.9}
 2024-11-11 03:18:37,100 - pyswarms.single.global_best - INFO - Optimize for 100 iters with {'c1': 0.7, 'c2': 0.3, 'w': 0.9}
 2024-11-11 03:19:09,162 - pyswarms.single.global_best - INFO - Optimize for 100 iters with {'c1': 0.7, 'c2': 0.3, 'w': 0.9}
+2024-11-11 12:15:35,834 - pyswarms.single.global_best - INFO - Optimize for 100 iters with {'c1': 1.5, 'c2': 1.5, 'w': 0.7}

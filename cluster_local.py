@@ -174,7 +174,7 @@ class ClusterLensing_fyp:
         for i in range(len(dt_true)):
             chi_sq += (dt[i] - dt_true[i])**2
         chi_sq /= 2*sigma**2                      # make positive for minimization
-        return np.log1p(chi_sq)
+        return chi_sq
     
     def localize(self, x_src_guess, y_src_guess, dt_true):
         """
@@ -225,7 +225,7 @@ class ClusterLensing_fyp:
         """
         i = index
         src_guess = [x_src_guess, y_src_guess]
-        result = minimize(self.chi_squared, src_guess, args=(dt_true, i),method='Nelder-Mead',
+        result = minimize(self.chi_squared, src_guess, args=(dt_true, i),method='L-',
             tol=1)
 
         min_chi_sq = result.fun
@@ -248,7 +248,7 @@ class ClusterLensing_fyp:
             strategy='rand1bin',    # Promotes diversity
             maxiter=2000,           # Increased iterations
             popsize=50,             # Larger population size
-            tol=1e-5,               # Smaller tolerance for precise convergence
+            tol=1,               # Smaller tolerance for precise convergence
             mutation=(0.8, 1.2),    # Higher mutation factor
             recombination=0.9,      # Higher recombination rate
             polish=True,            # Enable polishing
