@@ -133,32 +133,21 @@ class ClusterLensing_fyp:
         for i in range(len(x_img)):
             dt.append(t[i] - min(t))
         return dt
-    
-    def chi_squared(self, src_guess, dt_true,  index=0, sigma = 0.05):
-        """
-        Calculate the chi-squared value for a given source position.
 
-        Parameters:
-        -----------
-        src_guess: list
-            guess coordinates of the source in arcsec.
-        mag_true: list
-            List of true magnifications of the image in arcsec.
-        dt_true: list
-            List of true time delays of the image in arcsec.
-        sigma: float
-            The error in the time delay.
-        index: int
-            Index of the deflection map set to use (0 to 5).
+    def chi_squared(self, src_guess, dt_true, index=0, sigma=0.05):
+        """
+        Calculate the chi-squared value for a given source position guess.
         """
         x_src, y_src = src_guess
         img = self.image_position(x_src, y_src, index)
-
-
+        
+        # Check if image positions are found
+        if len(img[0]) == 0:
+            # No images found; return a high chi-squared penalty
+            return 1e13
+        
         t = self.time_delay(img[0], img[1], index, x_src, y_src)
-        dt = []
-        for i in range(len(img[0])):
-            dt.append(t[i] - min(t))
+        dt = [ti - min(t) for ti in t]
 
         # Determine the lengths of dt and dt_true
         len_dt = len(dt)
@@ -170,12 +159,40 @@ class ClusterLensing_fyp:
         elif len_dt_true < len_dt:
             dt_true += [0] * (len_dt - len_dt_true)
 
-        chi_sq = 0
-        for i in range(len(dt_true)):
-            chi_sq += (dt[i] - dt_true[i])**2
-        chi_sq /= 2*sigma**2                      # make positive for minimization
+        # Convert to numpy arrays
+        dt = np.array(dt)
+        dt_true = np.array(dt_true)
+
+        # Calculate chi-squared using NumPy vectorization
+        chi_sq = np.sum((dt - dt_true) ** 2) / (2 * sigma ** 2)
         return chi_sq
     
+    def localize_known_cluster(self, x_src_guess, y_src_guess, dt_true, index=1):
+        """
+        Find the source position by minimizing the chi-squared value 
+        and find which index of cluster does the source located in.
+
+        Parameters:
+        -----------
+        x_img: list
+            List of x coordinates of the image in arcsec.
+        y_img: list
+            List of y coordinates of the image in arcsec.
+        x_src: float
+            The x coordinate of the source in arcsec.
+        y_src: float
+            The y coordinate of the source in arcsec.
+        index: int
+            Index of the deflection map set to use (0 to 5).
+        """
+        i = index
+        src_guess = [x_src_guess, y_src_guess]
+        result = minimize(self.chi_squared, src_guess, args=(dt_true, i),method='L-',
+            tol=1)
+
+        min_chi_sq = result.fun
+        return result.x[0], result.x[1], min_chi_sq
+
     def localize(self, x_src_guess, y_src_guess, dt_true):
         """
         Find the source position by minimizing the chi-squared value 
@@ -205,32 +222,6 @@ class ClusterLensing_fyp:
         min_chi_sq = min(chi_sq)
         return chi_sq.index(min_chi_sq), result.x[0], result.x[1], min_chi_sq
     
-    def localize_known_cluster(self, x_src_guess, y_src_guess, dt_true, index=1):
-        """
-        Find the source position by minimizing the chi-squared value 
-        and find which index of cluster does the source located in.
-
-        Parameters:
-        -----------
-        x_img: list
-            List of x coordinates of the image in arcsec.
-        y_img: list
-            List of y coordinates of the image in arcsec.
-        x_src: float
-            The x coordinate of the source in arcsec.
-        y_src: float
-            The y coordinate of the source in arcsec.
-        index: int
-            Index of the deflection map set to use (0 to 5).
-        """
-        i = index
-        src_guess = [x_src_guess, y_src_guess]
-        result = minimize(self.chi_squared, src_guess, args=(dt_true, i),method='L-',
-            tol=1)
-
-        min_chi_sq = result.fun
-        return result.x[0], result.x[1], min_chi_sq
-
     def localize_known_cluster_diffevo(self, dt_true, index=1):
         """
         Find the source position by minimizing the chi-squared value
@@ -241,24 +232,52 @@ class ClusterLensing_fyp:
         x_min, x_max = x_center - 50, x_center + 50
         y_min, y_max = y_center - 50, y_center + 50
         bounds = [(x_min, x_max), (y_min, y_max)]  # Define appropriate bounds
+
+        # Define the callback function to stop optimization
+        def callback_fn(xk, convergence):
+            # Compute the chi-squared value at the current parameters
+            func_value = self.chi_squared(xk, dt_true, index)
+            # If chi-squared is less than 1e-5, stop the optimization
+            if func_value < 1e-4:
+                return True  # Stops the optimization
+            else:
+                return False
+            
         result = differential_evolution(
             self.chi_squared,  # Use the transformed objective function
             bounds,
             args=(dt_true, index),
-            strategy='rand1bin',    # Promotes diversity
-            maxiter=2000,           # Increased iterations
-            popsize=50,             # Larger population size
-            tol=1,               # Smaller tolerance for precise convergence
-            mutation=(0.8, 1.2),    # Higher mutation factor
-            recombination=0.9,      # Higher recombination rate
-            polish=True,            # Enable polishing
+            strategy='rand1bin',    
+            maxiter=300,           # Decreased iterations
+            popsize=40,             # Larger population size
+            tol=1e-3,               # Larger tolerance for faster running time
+            mutation=(0.5, 1),    
+            recombination=0.7,      
+            polish=False,           
             updating='deferred',    # May improve performance
-            workers=-1, disp=True)
+            workers=-1,
+            disp=False,
+            callback=callback_fn)
             
 
         x_opt, y_opt = result.x
         min_chi_sq = result.fun
         return x_opt, y_opt, min_chi_sq
+    
+    def localize_diffevo(self, dt_true):
+        """
+        Find the source position by minimizing the chi-squared value
+        using differential evolution.
+        """
+        chi_sqs = []
+        src_guess = []
+        for i in range(6):
+            x_guess, y_guess, chi_sq = self.localize_known_cluster_diffevo(dt_true, i)
+            src_guess.append([x_guess, y_guess])
+            chi_sqs.append(chi_sq)
+        min_chi_sq = min(chi_sqs)
+        return chi_sqs.index(min_chi_sq), src_guess, min_chi_sq
+        
     
     def chi_squared_vector(self, src_guesses, dt_true, index=0, sigma=0.05):
         chi_sqs = np.zeros(src_guesses.shape[0])  # Initialize array to hold chi-squared values
@@ -340,77 +359,4 @@ class ClusterLensing_fyp:
         min_chi_sq = best_cost
         return x_opt, y_opt, min_chi_sq
     
-    def localize_known_cluster_basinhopping(self, dt_true, index=1, niter=10):
-        """
-        Use basin-hopping to localize the source position for a known cluster index.
-
-        Parameters:
-        -----------
-        dt_true: list
-            List of true time delays of the images in arcsec.
-        index: int
-            Index of the deflection map set to use (0 to 5).
-        niter: int
-            Number of basin-hopping iterations.
-        """
-        # Get the cluster center and define bounds
-        x_center = self.x_center[int(index)]
-        y_center = self.y_center[int(index)]
-        x_min, x_max = x_center - 50, x_center + 50
-        y_min, y_max = y_center - 50, y_center + 50
-        bounds = [(x_min, x_max), (y_min, y_max)]
-        
-        # Define the objective function
-        def objective_function(src_guess):
-            return self.chi_squared(src_guess, dt_true, index)
-        
-        # Initial guess
-        x0 = [x_center, y_center]
-
-        # Custom step-taking function to ensure steps stay within bounds
-        class MyTakeStep:
-            def __init__(self, stepsize=1.0):
-                self.stepsize = stepsize
-
-            def __call__(self, x):
-                s = self.stepsize
-                x_new = x + np.random.uniform(-s, s, np.shape(x))
-                # Ensure x_new is within bounds
-                x_new[0] = np.clip(x_new[0], x_min, x_max)
-                x_new[1] = np.clip(x_new[1], y_min, y_max)
-                return x_new
-
-        take_step = MyTakeStep(stepsize=5.0)  # Adjust stepsize as needed
-
-        # Custom accept test to enforce bounds (optional)
-        class Bounds:
-            def __init__(self, xmin, xmax):
-                self.xmin = np.array(xmin)
-                self.xmax = np.array(xmax)
-
-            def __call__(self, **kwargs):
-                x = kwargs["x_new"]
-                tmax = bool(np.all(x <= self.xmax))
-                tmin = bool(np.all(x >= self.xmin))
-                return tmax and tmin
-
-        bounds_instance = Bounds([x_min, y_min], [x_max, y_max])
-
-        # Minimizer arguments
-        minimizer_kwargs = {"method": "L-BFGS-B", "bounds": bounds}
-
-        # Run basin-hopping
-        result = basinhopping(
-            objective_function,
-            x0,
-            niter=niter,
-            minimizer_kwargs=minimizer_kwargs,
-            take_step=take_step,
-            accept_test=bounds_instance,
-            disp=True  # Set to True to see progress
-        )
-
-        x_opt, y_opt = result.x
-        min_chi_sq = result.fun
-
-        return x_opt, y_opt, min_chi_sq
+    
