@@ -82,7 +82,7 @@ src_pos = src_pos.split(',')
 src_pos = list(map(float, src_pos))
 #print(src_pos)
 
-x_center, y_center = [90,75,110,70,110,70], [70,80,95,60,110,65]
+x_center, y_center = [90,75,110,70,90,70], [70,80,95,60,93,65]
 img_pos = solver.image_position_from_source(src_pos[0], src_pos[1], kwargs_lens,
                                             min_distance=pixscale, search_window=100,
                                             verbose=False, x_center=x_center[int(cluster_index)], y_center=y_center[int(cluster_index)])

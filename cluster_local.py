@@ -40,7 +40,7 @@ class ClusterLensing_fyp:
         self.time_delays = None
         self.diff_z = diff_z
 
-        self.x_center, self.y_center = [90,75,110,70,110,70], [70,80,95,60,110,65]
+        self.x_center, self.y_center = [90,75,110,70,90,70], [70,80,95,60,93,65]
 
         # get the size of the deflection maps
         self.size = []
@@ -90,6 +90,8 @@ class ClusterLensing_fyp:
             self.alpha_maps_y[i] *= scal
 
         return D_S1, D_S2, D_LS1, D_LS2
+    
+    
 
     def image_position(self, x_src, y_src, index=0):
         """
@@ -109,6 +111,52 @@ class ClusterLensing_fyp:
             x_src, y_src, [kwargs], min_distance=self.pixscale[index],
             search_window=100, verbose=False, x_center=self.x_center[int(index)], y_center=self.y_center[int(index)])
         return image_positions
+    
+    def rand_src_test(self, n_each=10, n=5):
+        """
+        Generate random source positions with over 'n' images for each cluster.
+
+        Parameters:
+        -----------
+        n_each: int
+            Number of random source positions to generate per cluster.
+        no: int
+            Minimum number of images required for a source position to be accepted.
+
+        Returns:
+        --------
+        srcs: list
+            List of accepted source positions.
+        indices: list
+            List of cluster indices corresponding to the accepted source positions.
+        """
+        srcs = []
+        indices = []
+        clusters = 6  # Number of clusters
+
+        for cluster_index in range(clusters):
+            count = 0
+            while count < n_each:
+                # Generate random source position
+                x_center = self.x_center[int(cluster_index)]
+                x_src = np.random.uniform(x_center - 30, x_center + 30)  # Adjust the range as needed
+                y_center = self.y_center[int(cluster_index)]
+                y_src = np.random.uniform(y_center - 30, y_center + 30)  # Adjust the range as needed
+
+                # Get image positions
+                img_positions = self.image_position(x_src, y_src, cluster_index)
+
+                # Debugging: Print the number of images
+                
+                # Check if the number of images is over the threshold
+                if len(img_positions[0]) >= n:
+                    print(f"Cluster index: {cluster_index}, Number of images: {len(img_positions[0])}")
+                    srcs.append((x_src, y_src))
+                    indices.append(cluster_index)
+                    count += 1  # Increment count for the current cluster
+
+        return srcs, indices
+            
     
     def time_delay(self,x_img, y_img, index=0, x_src=None, y_src=None):
         """
@@ -276,7 +324,8 @@ class ClusterLensing_fyp:
             src_guess.append([x_guess, y_guess])
             chi_sqs.append(chi_sq)
         min_chi_sq = min(chi_sqs)
-        return chi_sqs.index(min_chi_sq), src_guess, min_chi_sq
+        index = chi_sqs.index(min_chi_sq)
+        return index, src_guess[index], min_chi_sq, src_guess, chi_sqs
         
     
     def chi_squared_vector(self, src_guesses, dt_true, index=0, sigma=0.05):
