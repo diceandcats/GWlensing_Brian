@@ -1,14 +1,14 @@
-from math import ceil, floor
 import numpy as np
 #import matplotlib.pyplot as plt
-from scipy.optimize import minimize, differential_evolution, basinhopping
+from scipy.optimize import minimize, differential_evolution
 import pyswarms as ps
-from pyswarms.utils.functions import single_obj as fx
+#from pyswarms.utils.functions import single_obj as fx
 from astropy.cosmology import FlatLambdaCDM
-import lenstronomy.Util.constants as const
+#import lenstronomy.Util.constants as const
 import pandas as pd
 from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
+from tqdm import tqdm
 
 # pylint: disable=C0103
 class ClusterLensing_fyp:
@@ -47,7 +47,8 @@ class ClusterLensing_fyp:
         for i in range(6):
             self.size.append(len(alpha_maps_x[i]))
 
-        lens_model = ['INTERPOL']
+        self.lens_models = []
+        self.solvers = []
         self.kwargs_list = []
         for i in range(6):
 
@@ -60,8 +61,11 @@ class ClusterLensing_fyp:
                 'f_y': alpha_maps_y[i]
             }
             self.kwargs_list.append(kwargs)
-        self.lensmodel = LensModel(lens_model_list=lens_model, z_source=z_s, z_lens=z_l)
-        self.solver = LensEquationSolver(self.lensmodel)
+            lens_model_list = ['INTERPOL']
+            lensmodel = LensModel(lens_model_list=lens_model_list, z_source=z_s, z_lens=z_l)
+            solver = LensEquationSolver(lensmodel)
+            self.lens_models.append(lensmodel)
+            self.solvers.append(solver)
 
         if diff_z:
             self.D_S1, self.D_S2, self.D_LS1, self.D_LS2 = self.scaling()
@@ -94,22 +98,17 @@ class ClusterLensing_fyp:
     
 
     def image_position(self, x_src, y_src, index=0):
-        """
-        Find the image positions of the source for a given deflection map set.
-
-        Parameters:
-        -----------
-        x_src: float
-            The x coordinate of the source in arcsec.
-        y_src: float
-            The y coordinate of the source in arcsec.
-        index: int
-            Index of the deflection map set to use (0 to 5).
-        """
-        kwargs = self.kwargs_list[index]
-        image_positions = self.solver.image_position_from_source(
-            x_src, y_src, [kwargs], min_distance=self.pixscale[index],
-            search_window=100, verbose=False, x_center=self.x_center[int(index)], y_center=self.y_center[int(index)])
+        #lens_model = self.lens_models[index]
+        solver = self.solvers[index]
+        kwargs_lens = [self.kwargs_list[index]]
+        image_positions = solver.image_position_from_source(
+            x_src, y_src, kwargs_lens,  # Empty kwargs_lens since grids are set in LensModel
+            min_distance=self.pixscale[index],
+            search_window=100,
+            verbose=False,
+            x_center=self.x_center[int(index)],
+            y_center=self.y_center[int(index)]
+        )
         return image_positions
     
     def rand_src_test(self, n_each=10, n=5):
@@ -120,7 +119,7 @@ class ClusterLensing_fyp:
         -----------
         n_each: int
             Number of random source positions to generate per cluster.
-        no: int
+        n: int
             Minimum number of images required for a source position to be accepted.
 
         Returns:
@@ -156,7 +155,37 @@ class ClusterLensing_fyp:
                     count += 1  # Increment count for the current cluster
 
         return srcs, indices
-            
+    
+    def correct_indices_first(self, df):
+        corrected_indices = []
+
+        for idx, row in tqdm(df.iterrows()):
+            x = row['x']
+            y = row['y']
+            indices = row['indices']
+            indices = int(indices)
+            image_positions = self.image_position(x, y, indices)
+            no_images = len(image_positions[0])
+            success = False
+            if no_images < 5:
+                for possible_index in range(6):
+                    image_positions = self.image_position(x, y, possible_index)
+                    length_indices = len(image_positions[0])
+                    if length_indices >= 5:
+                        corrected_indices.append(possible_index)
+                        success = True
+                        break
+                if not success:
+                    print(f'error in row {idx}')
+                    corrected_indices.append(indices)
+            else:
+                corrected_indices.append(indices)
+
+        # Update the DataFrame
+        df['indices'] = corrected_indices
+
+        return df
+
     
     def time_delay(self,x_img, y_img, index=0, x_src=None, y_src=None):
         """
@@ -176,10 +205,9 @@ class ClusterLensing_fyp:
             Index of the deflection map set to use (0 to 5).
         """
         kwargs = self.kwargs_list[index]
-        t = self.lensmodel.arrival_time(x_img, y_img, [kwargs], x_source=x_src, y_source=y_src)
-        dt = []
-        for i in range(len(x_img)):
-            dt.append(t[i] - min(t))
+        lens_model = self.lens_models[index]
+        t = lens_model.arrival_time(x_img, y_img, [kwargs], x_source=x_src, y_source=y_src)
+        dt= t - t.min()
         return dt
 
     def chi_squared(self, src_guess, dt_true, index=0, sigma=0.05):
@@ -194,22 +222,14 @@ class ClusterLensing_fyp:
             # No images found; return a high chi-squared penalty
             return 1e13
         
-        t = self.time_delay(img[0], img[1], index, x_src, y_src)
-        dt = [ti - min(t) for ti in t]
-
-        # Determine the lengths of dt and dt_true
-        len_dt = len(dt)
+        # if the lengths are not equal, set the penalty
         len_dt_true = len(dt_true)
+        img_no = len(img[0])
+        if img_no != len_dt_true:
+            return abs(img_no - len_dt_true) * 1.4e12  # Penalty value
 
-        # if the lengths are not equal, pad the shorter list with zeros
-        if len_dt < len_dt_true:
-            dt += [0] * (len_dt_true - len_dt)
-        elif len_dt_true < len_dt:
-            dt_true += [0] * (len_dt - len_dt_true)
-
-        # Convert to numpy arrays
-        dt = np.array(dt)
-        dt_true = np.array(dt_true)
+        t = self.time_delay(img[0], img[1], index, x_src, y_src)
+        dt = t-t.min()
 
         # Calculate chi-squared using NumPy vectorization
         chi_sq = np.sum((dt - dt_true) ** 2) / (2 * sigma ** 2)
@@ -295,13 +315,13 @@ class ClusterLensing_fyp:
             self.chi_squared,  # Use the transformed objective function
             bounds,
             args=(dt_true, index),
-            strategy='rand1bin',    
-            maxiter=300,           # Decreased iterations
+            strategy='rand1bin',
+            maxiter=250,           # Decreased iterations
             popsize=40,             # Larger population size
             tol=1e-3,               # Larger tolerance for faster running time
-            mutation=(0.5, 1),    
-            recombination=0.7,      
-            polish=False,           
+            mutation=(0.5, 1),
+            recombination=0.7,
+            polish=False,
             updating='deferred',    # May improve performance
             workers=-1,
             disp=False,

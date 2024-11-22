@@ -91,9 +91,7 @@ mag = lensModel.magnification(img_pos[0], img_pos[1], kwargs_lens)
 #print(f'Magnification: {mag}')
 t = lensModel.arrival_time(img_pos[0], img_pos[1], kwargs_lens,
                            x_source=src_pos[0], y_source=src_pos[1])
-dt = []
-for i in range(len(img_pos[0])):
-    dt.append(t[i] - min(t))
+dt = t -t.min()
 #print(f'Time delay: {dt}')
 
 print(f'Infomations for test:\nNumber of images: {len(img_pos[0])}\nMagnification: {mag}\nTime delay: {dt}')
