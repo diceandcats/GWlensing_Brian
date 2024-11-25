@@ -95,4 +95,5 @@ dt = t -t.min()
 #print(f'Time delay: {dt}')
 
 print(f'Infomations for test:\nNumber of images: {len(img_pos[0])}\nMagnification: {mag}\nTime delay: {dt}')
+print(f'Image positions: {img_pos}')
 # test case: src: 63.8, 84.1 abell 2744
