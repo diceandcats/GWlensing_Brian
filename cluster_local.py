@@ -156,6 +156,51 @@ class ClusterLensing_fyp:
 
         return srcs, indices
     
+
+    def rand_src_test_1_cluster(self, n_each=50, n=5, index = 0):
+        """
+        Generate random source positions with over 'n' images for each cluster.
+
+        Parameters:
+        -----------
+        n_each: int
+            Number of random source positions to generate per cluster.
+        n: int
+            Minimum number of images required for a source position to be accepted.
+
+        Returns:
+        --------
+        srcs: list
+            List of accepted source positions.
+        indices: list
+            List of cluster indices corresponding to the accepted source positions.
+        """
+        srcs = []
+        indices = []
+
+        
+        count = 0
+        while count < n_each:
+            # Generate random source position
+            x_center = self.x_center[int(index)]
+            x_src = np.random.uniform(x_center - 30, x_center + 30)  # Adjust the range as needed
+            y_center = self.y_center[int(index)]
+            y_src = np.random.uniform(y_center - 30, y_center + 30)  # Adjust the range as needed
+
+            # Get image positions
+            img_positions = self.image_position(x_src, y_src, index)
+
+            # Debugging: Print the number of images
+                
+            # Check if the number of images is over the threshold
+            if len(img_positions[0]) >= n:
+                print(f"Cluster index: {index}, Number of images: {len(img_positions[0])}")
+                srcs.append((x_src, y_src))
+                indices.append(index)
+                count += 1  # Increment count for the current cluster
+
+        return srcs, indices
+    
     def correct_indices_first(self, df):
         corrected_indices = []
 
