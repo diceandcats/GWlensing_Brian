@@ -39,6 +39,7 @@ class ClusterLensing_fyp:
         self.magnifications = None
         self.time_delays = None
         self.diff_z = diff_z
+        self.scale_factor = None #for scaling the deflection maps
 
         self.x_center, self.y_center = [90,75,110,70,90,70], [70,80,95,60,93,65]
 
@@ -103,6 +104,20 @@ class ClusterLensing_fyp:
         kwargs_lens = [self.kwargs_list[index]]
         image_positions = solver.image_position_from_source(
             x_src, y_src, kwargs_lens,  # Empty kwargs_lens since grids are set in LensModel
+            min_distance=self.pixscale[index],
+            search_window=100,
+            verbose=False,
+            x_center=self.x_center[int(index)],
+            y_center=self.y_center[int(index)]
+        )
+        return image_positions
+
+    def image_position_z(self, x_src, y_src, z, index=0):
+        lens_model_z = LensModel(lens_model_list=['INTERPOL'], z_source=z, z_lens=self.z_l)
+        solver_z = LensEquationSolver(lens_model_z)
+        kwargs_lens = [self.kwargs_list[index]]
+        image_positions = solver_z.image_position_from_source(
+            x_src, y_src, kwargs_lens,
             min_distance=self.pixscale[index],
             search_window=100,
             verbose=False,
@@ -280,6 +295,31 @@ class ClusterLensing_fyp:
         chi_sq = np.sum((dt - dt_true) ** 2) / (2 * sigma ** 2)
         return chi_sq
     
+    def chi_squared_with_z(self, src_guess, z, dt_true, index=0, sigma=0.05):
+        """
+        Calculate the chi-squared value for a given source position guess with redshift scaling.
+        """
+        x_src, y_src = src_guess
+        img = self.image_position_z(x_src, y_src, z, index)
+        
+        # Check if image positions are found
+        if len(img[0]) == 0:
+            # No images found; return a high chi-squared penalty
+            return 1e13
+        
+        # if the lengths are not equal, set the penalty
+        len_dt_true = len(dt_true)
+        img_no = len(img[0])
+        if img_no != len_dt_true:
+            return abs(img_no - len_dt_true) * 1.4e12  # Penalty value
+
+        t = self.time_delay(img[0], img[1], index, x_src, y_src)
+        dt = t-t.min()
+
+        # Calculate chi-squared using NumPy vectorization
+        chi_sq = np.sum((dt - dt_true) ** 2) / (2 * sigma ** 2)
+        return chi_sq
+    
     def localize_known_cluster(self, x_src_guess, y_src_guess, dt_true, index=1):
         """
         Find the source position by minimizing the chi-squared value 
@@ -300,40 +340,12 @@ class ClusterLensing_fyp:
         """
         i = index
         src_guess = [x_src_guess, y_src_guess]
-        result = minimize(self.chi_squared, src_guess, args=(dt_true, i),method='L-',
-            tol=1)
+        result = minimize(self.chi_squared, src_guess, args=(dt_true, i),method='L-BFGS-B',
+            tol=1e-7)
 
         min_chi_sq = result.fun
         return result.x[0], result.x[1], min_chi_sq
 
-    def localize(self, x_src_guess, y_src_guess, dt_true):
-        """
-        Find the source position by minimizing the chi-squared value 
-        and find which index of cluster does the source located in.
-
-        Parameters:
-        -----------
-        x_img: list
-            List of x coordinates of the image in arcsec.
-        y_img: list
-            List of y coordinates of the image in arcsec.
-        x_src: float
-            The x coordinate of the source in arcsec.
-        y_src: float
-            The y coordinate of the source in arcsec.
-        index: int
-            Index of the deflection map set to use (0 to 5).
-        """
-        chi_sq = []
-        for i in range(6):
-            index = i
-            src_guess = [x_src_guess, y_src_guess]
-            result = minimize(self.chi_squared, src_guess, args=(dt_true, index),method='L-BFGS-B',
-                tol=1e-7)
-            chi_sq.append(result.fun)
-        
-        min_chi_sq = min(chi_sq)
-        return chi_sq.index(min_chi_sq), result.x[0], result.x[1], min_chi_sq
     
     def localize_known_cluster_diffevo(self, dt_true, index=1):
         """
@@ -376,6 +388,64 @@ class ClusterLensing_fyp:
         x_opt, y_opt = result.x
         min_chi_sq = result.fun
         return x_opt, y_opt, min_chi_sq
+    
+
+    def localize_known_cluster_diffevo_with_z(self, dt_true, index=1):
+        """
+        Find the source position (x, y) and redshift z by minimizing the chi-squared
+        value using differential evolution.
+        """
+        # Center points for x and y (use your existing logic)
+        x_center = self.x_center[int(index)]
+        y_center = self.y_center[int(index)]
+        
+        # Define search bounds for x, y, and z
+        x_min, x_max = x_center - 50, x_center + 50
+        y_min, y_max = y_center - 50, y_center + 50
+        
+        # Example z-bounds
+        z_min, z_max = 0.51, 1.1
+        
+        # Combine all bounds (x, y, z)
+        bounds = [(x_min, x_max),
+                (y_min, y_max),
+                (z_min, z_max)]
+        
+        # Define the callback function to potentially stop optimization early
+        def callback_fn(xk, convergence):
+            # Compute the chi-squared value at the current parameters
+            func_value = self.chi_squared_with_z(xk, dt_true, index)
+            # If chi-squared is less than 1e-5, stop the optimization
+            if func_value < 1e-4:
+                return True  # Stops the optimization
+            else:
+                return False
+
+        # Perform the differential evolution
+        result = differential_evolution(
+            self.chi_squared_with_z,   # Objective function with z included
+            bounds,
+            args=(dt_true, index),     # Additional arguments passed to the objective
+            strategy='rand1bin',
+            maxiter=250,
+            popsize=40,
+            tol=1e-3,
+            mutation=(0.5, 1),
+            recombination=0.7,
+            polish=False,
+            updating='deferred',
+            workers=-1,
+            disp=True,
+            callback=callback_fn,
+
+        )
+        
+        # Unpack optimized x, y, z
+        x_opt, y_opt, z_opt = result.x
+        min_chi_sq = result.fun
+
+        return x_opt, y_opt, z_opt, min_chi_sq
+
     
     def localize_diffevo(self, dt_true):
         """

@@ -4,6 +4,7 @@ import numpy as np
 from astropy.io import fits
 from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
+from astropy.cosmology import FlatLambdaCDM
 
 
 print("Please input the index(0-5) of the name of the galaxy cluster for placing the source listed: \nAbell 370, Abell 2744, Abell S1063, MACS0416, MACS0717, MACS1149")
@@ -65,6 +66,20 @@ if cluster_index in scenarios:
 
     realsize = datax.shape[0]
     grid = np.linspace(0, realsize-1, realsize) * pixscale
+
+    # scal the maps with input redshifts
+    
+    cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
+    D_LS = cosmo.angular_diameter_distance_z1z2(z_l, z_s)
+    D_S = cosmo.angular_diameter_distance(z_s)
+
+    # Scale deflection map
+    scal = D_LS/D_S
+    datax *= scal
+    datay *= scal
+    data_psi_arcsec *= scal
+    print(f'Scaling factor: {scal}')
+
     lens_model_list = ['INTERPOL']
     kwargs_lens = [{'grid_interp_x': grid, 'grid_interp_y': grid, 'f_': data_psi_arcsec,
                             'f_x': datax, 'f_y': datay}]
