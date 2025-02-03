@@ -5,7 +5,6 @@ import pyswarms as ps
 #from pyswarms.utils.functions import single_obj as fx
 from astropy.cosmology import FlatLambdaCDM
 #import lenstronomy.Util.constants as const
-import pandas as pd
 from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 from tqdm import tqdm
@@ -320,31 +319,31 @@ class ClusterLensing_fyp:
         chi_sq = np.sum((dt - dt_true) ** 2) / (2 * sigma ** 2)
         return chi_sq
     
-    def localize_known_cluster(self, x_src_guess, y_src_guess, dt_true, index=1):
-        """
-        Find the source position by minimizing the chi-squared value 
-        and find which index of cluster does the source located in.
+    # def localize_known_cluster(self, x_src_guess, y_src_guess, dt_true, index=1):
+    #     """
+    #     Find the source position by minimizing the chi-squared value 
+    #     and find which index of cluster does the source located in.
 
-        Parameters:
-        -----------
-        x_img: list
-            List of x coordinates of the image in arcsec.
-        y_img: list
-            List of y coordinates of the image in arcsec.
-        x_src: float
-            The x coordinate of the source in arcsec.
-        y_src: float
-            The y coordinate of the source in arcsec.
-        index: int
-            Index of the deflection map set to use (0 to 5).
-        """
-        i = index
-        src_guess = [x_src_guess, y_src_guess]
-        result = minimize(self.chi_squared, src_guess, args=(dt_true, i),method='L-BFGS-B',
-            tol=1e-7)
+    #     Parameters:
+    #     -----------
+    #     x_img: list
+    #         List of x coordinates of the image in arcsec.
+    #     y_img: list
+    #         List of y coordinates of the image in arcsec.
+    #     x_src: float
+    #         The x coordinate of the source in arcsec.
+    #     y_src: float
+    #         The y coordinate of the source in arcsec.
+    #     index: int
+    #         Index of the deflection map set to use (0 to 5).
+    #     """
+    #     i = index
+    #     src_guess = [x_src_guess, y_src_guess]
+    #     result = minimize(self.chi_squared, src_guess, args=(dt_true, i),method='L-BFGS-B',
+    #         tol=1e-7)
 
-        min_chi_sq = result.fun
-        return result.x[0], result.x[1], min_chi_sq
+    #     min_chi_sq = result.fun
+    #     return result.x[0], result.x[1], min_chi_sq
 
     
     def localize_known_cluster_diffevo(self, dt_true, index=1):
@@ -487,60 +486,5 @@ class ClusterLensing_fyp:
 
         return chi_sqs
 
-
-    def localize_known_cluster_pso(self, dt_true, index=1, n_particles=50, iters=100):
-        """
-        Use PSO to localize the source position for a known cluster index.
-        """
-        # Define bounds for the source coordinates based on the cluster center
-        x_center = self.x_center[int(index)]
-        y_center = self.y_center[int(index)]
-        x_min, x_max = x_center - 50, x_center + 50
-        y_min, y_max = y_center - 50, y_center + 50
-        bounds = ([x_min, y_min], [x_max, y_max])
-        
-        # Define the number of dimensions (2 for x_src and y_src)
-        dimensions = 2
-        
-        # Define options for the PSO algorithm with dynamic inertia weight
-        options = {
-            'c1': 1.5,  # Cognitive parameter
-            'c2': 1.5,  # Social parameter
-            'w': 0.7    # Starting inertia weight
-        }
-
-        # Generate initial positions near the initial guess
-        init_pos = np.random.uniform(
-            low=[x_center - 3, y_center - 3],
-            high=[x_center + 3, y_center + 3],
-            size=(n_particles, dimensions)
-        )
-        # Ensure initial positions are within bounds
-        init_pos = np.clip(init_pos, a_min=bounds[0], a_max=bounds[1])
-       
-        # Create the optimizer
-        optimizer = ps.single.GlobalBestPSO(
-            n_particles=n_particles,
-            dimensions=dimensions,
-            options=options,
-            bounds=bounds,
-            init_pos=init_pos,
-            velocity_clamp=(-10, 10)
-            )
-        
-        # Define the objective function wrapper
-        def objective_function(src_guesses):
-            return self.chi_squared_vector(src_guesses, dt_true, index)
-        
-        # Perform the optimization
-        best_cost, best_pos = optimizer.optimize(
-            objective_function,
-            iters=iters,
-            verbose=True  # Set to True to see progress
-        )
-        
-        x_opt, y_opt = best_pos
-        min_chi_sq = best_cost
-        return x_opt, y_opt, min_chi_sq
     
     

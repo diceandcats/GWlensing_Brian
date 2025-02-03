@@ -7,12 +7,12 @@ from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 from astropy.cosmology import FlatLambdaCDM
 
 
+z_l_list = [0.375, 0.308, 0.351, 0.397, 0.545, 0.543]
 print("Please input the index(0-5) of the name of the galaxy cluster for placing the source listed: \nAbell 370, Abell 2744, Abell S1063, MACS0416, MACS0717, MACS1149")
 cluster_index = input()
-print("Please input the source and lens redshifts separated by a comma: ")
-z_s, z_l = input().split(',')
-z_s = float(z_s)
-z_l = float(z_l)
+print("Please input the source redshift: ")
+z_s = input()
+z_l = z_l_list[int(cluster_index)]
 
 # 6 cases
 scenarios = {
@@ -111,4 +111,4 @@ dt = t -t.min()
 
 print(f'Infomations for test:\nNumber of images: {len(img_pos[0])}\nMagnification: {mag}\nTime delay: {dt}')
 print(f'Image positions: {img_pos}')
-# test case: src: 63.8, 84.1 abell 2744
+# test case: src: 67.5, 81 abell 2744
