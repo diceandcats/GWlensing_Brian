@@ -193,6 +193,31 @@ class ClusterLensing_fyp:
         t = lens_model.arrival_time(x_img, y_img, [kwargs], x_source=x_src, y_source=y_src)
         dt = t - t.min()
         return dt
+    
+    def time_delay_z(self, x_img, y_img, z_s, index=0, x_src=None, y_src=None):
+        D_S_candidate = self.cosmo.angular_diameter_distance(z_s)
+        D_LS_candidate = self.cosmo.angular_diameter_distance_z1z2(self.z_l_list[index], z_s)
+        candidate_scale = D_LS_candidate / D_S_candidate
+
+        size = self.size[index]
+        pix = self.pixscale[index]
+        x_grid = np.linspace(0, size - 1, size) * pix
+        alpha_x = self.alpha_maps_x_orig[index] * candidate_scale
+        alpha_y = self.alpha_maps_y_orig[index] * candidate_scale
+        potential = self.lens_potential_maps_orig[index] * candidate_scale
+        candidate_kwargs_2 = {
+            'grid_interp_x': x_grid,
+            'grid_interp_y': x_grid,
+            'f_': potential * pix**2,
+            'f_x': alpha_x,
+            'f_y': alpha_y
+        }
+
+        lens_model_2 = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index])
+        t = lens_model_2.arrival_time(x_img, y_img, [candidate_kwargs_2],
+                                               x_source=x_src, y_source=y_src)
+        dt = t - t.min()
+        return dt
 
     def chi_squared(self, src_guess, dt_true, index=0, sigma=0.05):
         x_src, y_src = src_guess
