@@ -1,9 +1,11 @@
 import numpy as np
 from scipy.optimize import minimize, differential_evolution
-import pyswarms as ps
 from astropy.cosmology import FlatLambdaCDM
 from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
+import emcee
+from emcee.moves import StretchMove
+import multiprocessing as mp
 
 # pylint: disable=C0103
 class ClusterLensing_fyp:
@@ -366,6 +368,113 @@ class ClusterLensing_fyp:
         min_chi_sq = min(chi_sqs)
         index = chi_sqs.index(min_chi_sq)
         return index, src_guess[index], min_chi_sq, src_guess, chi_sqs
+    
+    def _log_posterior_func(self, params, x_center, y_center, x_range, y_range,
+                        z_lower, z_upper, dt_true, index, sigma, self_obj):
+        """
+        Top-level (picklable) log-posterior function used by emcee in parallel.
+
+        Parameters
+        ----------
+        params : array-like of length 3
+            (x_src, y_src, z_s)
+        x_center, y_center : float
+            Center coordinates around which we define the prior box.
+        x_range, y_range : float
+            Defines x in [x_center - x_range, x_center + x_range], etc.
+        z_lower, z_upper : float
+            Bounds for source redshift z_s.
+        dt_true : array-like
+            Observed time delays for this lens index.
+        index : int
+            Lens index.
+        sigma : float
+            Uncertainty used by chi_squared_with_z in self_obj.
+        self_obj : ClusterLensing_fyp
+            The instance of your class (passed so we can call self_obj.chi_squared_with_z).
+
+        Returns
+        -------
+        float
+            log-posterior value. -inf if outside the prior box.
+        """
+        x_src, y_src, z_s = params
+
+        # --- 1) Log-prior: uniform in bounding box ---
+        in_x_bounds = (x_center - x_range <= x_src <= x_center + x_range)
+        in_y_bounds = (y_center - y_range <= y_src <= y_center + y_range)
+        in_z_bounds = (z_lower <= z_s <= z_upper)
+
+        if not (in_x_bounds and in_y_bounds and in_z_bounds):
+            return -np.inf  # outside prior
+
+        # --- 2) Log-likelihood = -0.5 * chi^2 ---
+        chi_sq = self_obj.chi_squared_with_z((x_src, y_src, z_s),
+                                            dt_true,
+                                            index=index,
+                                            sigma=sigma)
+        log_likelihood = -0.5 * chi_sq
+
+        # Uniform prior => log_prior = 0 inside bounds
+        log_prior = 0.0
+
+        return log_prior + log_likelihood
+
+    def localize_mcmc_emcee(self, dt_true, index=0,
+                            n_walkers=50, n_steps=5000, burn_in=1000,
+                            x_range=50.0, y_range=50.0,
+                            z_lower=2.5, z_upper=3.5,
+                            sigma=0.05,
+                            random_seed=42,
+                            n_processes=4):
+        """
+        MCMC with parallelization via emcee + multiprocessing,
+        using a prior box around (x_center[index], y_center[index]) ± x_range, y_range,
+        and z_s in [z_lower, z_upper].
+        """
+        np.random.seed(random_seed)
+
+        # 1) Gather the lens center for the chosen index
+        x_center = self.x_center[index]
+        y_center = self.y_center[index]
+
+        # 2) Dimension and init for the MCMC
+        ndim = 3  # (x_src, y_src, z_s)
+
+        def random_in_prior():
+            """Random point inside the prior box."""
+            x0 = np.random.uniform(x_center - x_range, x_center + x_range)
+            y0 = np.random.uniform(y_center - y_range, y_center + y_range)
+            z0 = np.random.uniform(z_lower, z_upper)
+            return np.array([x0, y0, z0])
+
+        initial_positions = np.array([random_in_prior() for _ in range(n_walkers)])
+        move = StretchMove(a=1.8)
+        # 3) Create a multiprocessing Pool
+        with mp.Pool(processes=n_processes) as pool:
+
+            # 4) Create emcee sampler, passing the global function and extra args
+            sampler = emcee.EnsembleSampler(
+                n_walkers,
+                ndim,
+                self._log_posterior_func,            # <- our top-level function
+                args=(x_center, y_center,
+                      x_range, y_range,
+                      z_lower, z_upper,
+                      dt_true, index, sigma,
+                      self),                       # <- we pass 'self' last
+                pool=pool,
+                moves=move
+            )
+
+            # 5) Run MCMC
+            sampler.run_mcmc(initial_positions, n_steps, progress=True)
+
+        # 6) Discard burn-in, flatten
+        chain = sampler.get_chain(discard=burn_in, flat=False)
+        flat_samples = chain.reshape((-1, ndim))
+
+        return sampler, flat_samples
 
     def chi_squared_vector(self, src_guesses, dt_true, index=0, sigma=0.05):
         chi_sqs = np.zeros(src_guesses.shape[0])
