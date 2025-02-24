@@ -109,6 +109,6 @@ t = lensModel.arrival_time(img_pos[0], img_pos[1], kwargs_lens,
 dt = t -t.min()
 #print(f'Time delay: {dt}')
 
-print(f'Infomations for test:\nNumber of images: {len(img_pos[0])}\nMagnification: {mag}\nTime delay: {dt}')
+print(f'Infomations for test:\nNumber of images: {len(img_pos[0])}\nMagnification: {mag.tolist()}\nTime delay: {dt.tolist()}')
 print(f'Image positions: {img_pos}')
 # test case: src: 67.5, 81 abell 2744
