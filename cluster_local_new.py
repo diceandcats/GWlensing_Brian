@@ -357,7 +357,7 @@ class ClusterLensing_fyp:
             strategy='rand1bin',
             maxiter=250,
             popsize=40,
-            tol=1e-3,
+            tol=1e-6,
             mutation=(0.5, 1),
             recombination=0.7,
             polish=False,
@@ -393,9 +393,9 @@ class ClusterLensing_fyp:
             bounds,
             args=(dt_true, index),
             strategy='rand1bin',
-            maxiter=250,
+            maxiter=200,
             popsize=40,
-            tol=1e-3,
+            tol=1e-8,
             mutation=(0.5, 1),
             recombination=0.7,
             polish=False,
@@ -407,6 +407,10 @@ class ClusterLensing_fyp:
         
         x_opt, y_opt, z_opt = result.x
         min_chi_sq = result.fun
+
+        if min_chi_sq > 5 * threshold:
+            return None, None, None, None
+
         return x_opt, y_opt, z_opt, min_chi_sq
 
     def localize_diffevo(self, dt_true):
@@ -563,8 +567,8 @@ class ClusterLensing_fyp:
                                n_walkers=24, n_steps=800, burn_in=300,
                                x_range_prior=10.0, y_range_prior=10.0,
                                x_range_int=1.0, y_range_int = 1.0, z_range_int = 0.2,
-                               z_lower=2.5, z_upper=3.5,
-                               sigma=0.10,
+                               z_lower=2.0, z_upper=3.5,
+                               sigma=0.05,
                                random_seed=42,
                                n_processes=8):
         """
@@ -579,6 +583,10 @@ class ClusterLensing_fyp:
         # You can adapt localize_known_cluster_diffevo_with_z to use the 
         # de_xrange, de_yrange, de_zrange if needed. For now let's just call it directly.
         x_opt, y_opt, z_opt, min_chi_sq = self.localize_known_cluster_diffevo_with_z(dt_true, index, threshold=early_stop)
+        if x_opt is None and y_opt is None:
+            print("DE failed, try another cluster.")
+            return None, None, None, None
+        
         print(f"DE best solution for cluster {index}: x={x_opt:.3f}, y={y_opt:.3f}, z={z_opt:.3f}, chi^2={min_chi_sq:.3f}")
 
         x_center = x_opt
@@ -618,8 +626,8 @@ class ClusterLensing_fyp:
                     self,               # <-- self_obj
                     dt_true, index, sigma,
                     False, None,        # fix_z=False, z_s_fix=None
-                    z_lower, z_upper
-                    ),    # override the defaults in the function
+                    z_lower, z_upper    # override the defaults in the function
+                    ),    
                 pool=pool,
                 moves=move
             )
@@ -639,6 +647,50 @@ class ClusterLensing_fyp:
         print(f"MCMC median after DE: x={x_median:.2f}, y={y_median:.2f}, z={z_median:.2f}")
 
         return (x_opt, y_opt, z_opt, min_chi_sq), (x_median, y_median, z_median), sampler, flat_samples
+    
+    def localize_diffevo_then_mcmc(self, dt_true,
+                               # DE settings
+                               early_stop=1e6,
+                               # MCMC settings
+                               n_walkers=24, n_steps=800, burn_in=300,
+                               x_range_prior=10.0, y_range_prior=10.0,
+                               x_range_int=1.0, y_range_int = 1.0, z_range_int = 0.2,
+                               z_lower=2.0, z_upper=3.5,
+                               sigma=0.10,
+                               random_seed=42,
+                               n_processes=8):
+
+        opt_pos = None
+        opt_chi_sq = None
+        opt_sampler = None
+        opt_flat_samples = None
+        
+
+        for i in range(6):
+            index = i
+            _, medians, sampler, flat_samples = self.localize_diffevo_then_mcmc_known_cluster(dt_true,  index,
+                               early_stop,
+                               n_walkers, n_steps, burn_in,
+                               x_range_prior, y_range_prior,
+                               x_range_int, y_range_int, z_range_int,
+                               z_lower, z_upper,
+                               sigma,
+                               random_seed,
+                               n_processes)
+            
+            if medians is None:
+                print("Nothing found for this index.")
+                continue
+            chi_sq = self.chi_squared_with_z(self,medians, dt_true, index)
+            
+            if opt_chi_sq is None or chi_sq <= opt_chi_sq:
+                opt_pos = medians
+                opt_chi_sq = chi_sq
+                opt_sampler = sampler
+                opt_flat_samples = flat_samples
+                print("Replaced original opt.")
+
+        return opt_pos, opt_chi_sq, opt_sampler, opt_flat_samples
 
     def chi_squared_vector(self, src_guesses, dt_true, index=0, sigma=0.05):
         chi_sqs = np.zeros(src_guesses.shape[0])
