@@ -569,13 +569,11 @@ class ClusterLensing_fyp:
                                x_range_int=1.0, y_range_int = 1.0, z_range_int = 0.2,
                                z_lower=2.0, z_upper=3.5,
                                sigma=0.05,
-                               random_seed=42,
                                n_processes=8):
         """
         1) Use differential evolution to find (x_opt, y_opt, z_opt).
         2) Then run MCMC around that solution to get posterior samples.
         """
-        np.random.seed(random_seed)
 
         # -------------------------------------------------------
         # STEP 1: Run differential evolution to get best guess
@@ -657,7 +655,6 @@ class ClusterLensing_fyp:
                                x_range_int=1.0, y_range_int = 1.0, z_range_int = 0.2,
                                z_lower=2.0, z_upper=3.5,
                                sigma=0.10,
-                               random_seed=42,
                                n_processes=8):
 
         opt_pos = None
@@ -675,13 +672,12 @@ class ClusterLensing_fyp:
                                x_range_int, y_range_int, z_range_int,
                                z_lower, z_upper,
                                sigma,
-                               random_seed,
                                n_processes)
             
             if medians is None:
                 print("Nothing found for this index.")
                 continue
-            chi_sq = self.chi_squared_with_z(self,medians, dt_true, index)
+            chi_sq = self.chi_squared_with_z(medians, dt_true, index)
             
             if opt_chi_sq is None or chi_sq <= opt_chi_sq:
                 opt_pos = medians
