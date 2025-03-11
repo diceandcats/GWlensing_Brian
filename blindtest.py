@@ -98,8 +98,9 @@ src_pos = list(map(float, src_pos))
 #print(src_pos)
 
 x_center, y_center = [90,75,110,70,90,70], [70,80,95,60,93,65]
+search_window_list = [90.1, 95, 100, 85, 100, 90]
 img_pos = solver.image_position_from_source(src_pos[0], src_pos[1], kwargs_lens,
-                                            min_distance=pixscale, search_window=100,
+                                            min_distance=pixscale, search_window=int(search_window_list[int(cluster_index)]),
                                             verbose=False, x_center=x_center[int(cluster_index)], y_center=y_center[int(cluster_index)])
 #print(f'Image positions: {img_pos}')
 mag = lensModel.magnification(img_pos[0], img_pos[1], kwargs_lens)

@@ -108,6 +108,7 @@ class ClusterLensing_fyp:
         self.lens_potential_maps_orig = [np.copy(m) for m in lens_potential_maps]
 
         self.x_center, self.y_center = [90, 75, 110, 70, 90, 70], [70, 80, 95, 60, 93, 65]
+        self.search_window_list = [90.1, 95, 100, 85, 100, 90]
         self.z_l_list = [0.375, 0.308, 0.351, 0.397, 0.545, 0.543]
 
         # Get the size of the deflection maps
@@ -164,7 +165,7 @@ class ClusterLensing_fyp:
         image_positions = solver.image_position_from_source(
             x_src, y_src, kwargs_lens,
             min_distance=self.pixscale[index],
-            search_window=100,
+            search_window=self.search_window_list[int(index)],
             verbose=False,
             x_center=self.x_center[int(index)],
             y_center=self.y_center[int(index)]
@@ -183,7 +184,7 @@ class ClusterLensing_fyp:
         image_positions = solver_z.image_position_from_source(
             x_src, y_src, kwargs_lens,
             min_distance=self.pixscale[index],
-            search_window=100,
+            search_window=self.search_window_list[int(index)],
             verbose=False,
             x_center=self.x_center[int(index)],
             y_center=self.y_center[int(index)]
@@ -282,6 +283,40 @@ class ClusterLensing_fyp:
                                                x_source=x_src, y_source=y_src)
         dt = t - t.min()
         return dt
+    
+    def my_image_and_delay_for_xyz(self, x_src, y_src, z_s, index=0):
+        # 1) Re-scale the deflection/potential maps for the new z_s
+        D_S_candidate = self.cosmo.angular_diameter_distance(z_s)
+        D_LS_candidate = self.cosmo.angular_diameter_distance_z1z2(self.z_l_list[index], z_s)
+        candidate_scale = D_LS_candidate / D_S_candidate
+        
+        size = self.size[index]
+        pix = self.pixscale[index]
+        x_grid = np.linspace(0, size - 1, size) * pix
+        
+        candidate_alpha_x = self.alpha_maps_x_orig[index] * candidate_scale
+        candidate_alpha_y = self.alpha_maps_y_orig[index] * candidate_scale
+        candidate_potential = self.lens_potential_maps_orig[index] * candidate_scale
+        
+        candidate_kwargs = {
+            'grid_interp_x': x_grid,
+            'grid_interp_y': x_grid,
+            'f_': candidate_potential * pix**2,
+            'f_x': candidate_alpha_x,
+            'f_y': candidate_alpha_y
+        }
+
+        # 2) Solve for image positions, using that candidate_kwargs
+        x_img, y_img = self.image_position_z(x_src, y_src, z_s,
+                                            index=index,
+                                            candidate_kwargs=candidate_kwargs)
+        
+        # 3) Then compute time delay
+        dt = self.time_delay_z(x_img, y_img, z_s,
+                            index=index,
+                            x_src=x_src,
+                            y_src=y_src)
+        return (x_img, y_img, dt)
 
     def chi_squared(self, src_guess, dt_true, index=0, sigma=0.05):
         x_src, y_src = src_guess
@@ -393,9 +428,9 @@ class ClusterLensing_fyp:
             bounds,
             args=(dt_true, index),
             strategy='rand1bin',
-            maxiter=200,
+            maxiter=150,
             popsize=40,
-            tol=1e-8,
+            tol=1e-7,
             mutation=(0.5, 1),
             recombination=0.7,
             polish=False,
@@ -566,7 +601,7 @@ class ClusterLensing_fyp:
                                # MCMC settings
                                n_walkers=24, n_steps=800, burn_in=300,
                                x_range_prior=10.0, y_range_prior=10.0,
-                               x_range_int=1.0, y_range_int = 1.0, z_range_int = 0.2,
+                               x_range_int=2.0, y_range_int = 2.0, z_range_int = 0.3,
                                z_lower=2.0, z_upper=3.5,
                                sigma=0.05,
                                n_processes=8):
@@ -661,6 +696,7 @@ class ClusterLensing_fyp:
         opt_chi_sq = None
         opt_sampler = None
         opt_flat_samples = None
+        opt_index = None
         
 
         for i in range(6):
@@ -684,9 +720,10 @@ class ClusterLensing_fyp:
                 opt_chi_sq = chi_sq
                 opt_sampler = sampler
                 opt_flat_samples = flat_samples
+                opt_index = index
                 print("Replaced original opt.")
 
-        return opt_pos, opt_chi_sq, opt_sampler, opt_flat_samples
+        return opt_index, opt_pos, opt_chi_sq, opt_sampler, opt_flat_samples
 
     def chi_squared_vector(self, src_guesses, dt_true, index=0, sigma=0.05):
         chi_sqs = np.zeros(src_guesses.shape[0])
