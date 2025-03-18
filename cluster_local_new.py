@@ -136,28 +136,28 @@ class ClusterLensing_fyp:
             self.lens_models.append(lensmodel)
             self.solvers.append(solver)
 
-        if diff_z:
-            self.D_S1, self.D_S2, self.D_LS1, self.D_LS2 = self.scaling()
+    #     if diff_z:
+    #         self.D_S1, self.D_S2, self.D_LS1, self.D_LS2 = self.scaling()
 
-    def scaling(self):
-        """
-        Scale the deflection maps (and potentially the lens potential maps) from a reference source redshift.
-        """
-        z_L = self.z_l
-        z_S = self.z_s
+    # def scaling(self):
+    #     """
+    #     Scale the deflection maps (and potentially the lens potential maps) from a reference source redshift.
+    #     """
+    #     z_L = self.z_l
+    #     z_S = self.z_s
 
-        D_S1 = self.cosmo.angular_diameter_distance(1.0)
-        D_S2 = self.cosmo.angular_diameter_distance(z_S)
-        D_LS1 = self.cosmo.angular_diameter_distance_z1z2(z_L, 1.0)
-        D_LS2 = self.cosmo.angular_diameter_distance_z1z2(z_L, z_S)
+    #     D_S1 = self.cosmo.angular_diameter_distance(1.0)
+    #     D_S2 = self.cosmo.angular_diameter_distance(z_S)
+    #     D_LS1 = self.cosmo.angular_diameter_distance_z1z2(z_L, 1.0)
+    #     D_LS2 = self.cosmo.angular_diameter_distance_z1z2(z_L, z_S)
 
-        scal = (D_LS1 * D_S2) / (D_LS2 * D_S1)
+    #     scal = (D_LS1 * D_S2) / (D_LS2 * D_S1)
 
-        for i in range(6):
-            self.alpha_maps_x[i] *= scal
-            self.alpha_maps_y[i] *= scal
+    #     for i in range(6):
+    #         self.alpha_maps_x[i] *= scal
+    #         self.alpha_maps_y[i] *= scal
 
-        return D_S1, D_S2, D_LS1, D_LS2
+    #     return D_S1, D_S2, D_LS1, D_LS2
 
     def image_position(self, x_src, y_src, index=0):
         solver = self.solvers[index]
@@ -179,6 +179,25 @@ class ClusterLensing_fyp:
         If candidate_kwargs is provided, it is used instead of the stored self.kwargs_list.
         """
         lens_model_z = LensModel(lens_model_list=['INTERPOL'], z_source=z, z_lens=self.z_l_list[index])
+        solver_z = LensEquationSolver(lens_model_z)
+        kwargs_lens = [candidate_kwargs] if candidate_kwargs is not None else [self.kwargs_list[index]]
+        image_positions = solver_z.image_position_from_source(
+            x_src, y_src, kwargs_lens,
+            min_distance=self.pixscale[index],
+            search_window=self.search_window_list[int(index)],
+            verbose=False,
+            x_center=self.x_center[int(index)],
+            y_center=self.y_center[int(index)]
+        )
+        return image_positions
+    
+    def image_position_z_Hubble(self, x_src, y_src, z, Hubble = 70, index=0, candidate_kwargs=None):
+        """
+        Returns the image positions at source (x_src, y_src) for a given candidate source redshift z and Hubble constant.
+        If candidate_kwargs is provided, it is used instead of the stored self.kwargs_list.
+        """
+        cosmo = FlatLambdaCDM(H0=Hubble, Om0=0.3)
+        lens_model_z = LensModel(lens_model_list=['INTERPOL'], z_source=z, z_lens=self.z_l_list[index], cosmo=cosmo)
         solver_z = LensEquationSolver(lens_model_z)
         kwargs_lens = [candidate_kwargs] if candidate_kwargs is not None else [self.kwargs_list[index]]
         image_positions = solver_z.image_position_from_source(
@@ -471,131 +490,6 @@ class ClusterLensing_fyp:
         min_chi_sq = min(chi_sqs)
         index = chi_sqs.index(min_chi_sq)
         return index, src_guess[index], min_chi_sq, src_guess, chi_sqs
-    
-    
-    # def localize_mcmc_emcee_fix_z(self, dt_true, index=0,
-    #                               n_walkers=50, n_steps=5000, burn_in=1000,
-    #                               x_range=50.0, y_range=50.0,
-    #                               z_s_fix=1.0,  # your fixed redshift
-    #                               sigma=0.05,
-    #                               random_seed=42,
-    #                               n_processes=8, fix_z=True):
-    #     """
-    #     Run MCMC with x_src,y_src as free parameters, and z_s = z_s_fix (held fixed).
-    #     """
-    #     np.random.seed(random_seed)
-
-    #     x_center = self.x_center[index]
-    #     y_center = self.y_center[index]
-
-    #     # If z is fixed, we only sample x_src,y_src => 2D problem
-    #     ndim = 2
-
-    #     # function to pick random initial positions within prior
-    #     def random_in_prior():
-    #         x0 = np.random.uniform(x_center - x_range, x_center + x_range)
-    #         y0 = np.random.uniform(y_center - y_range, y_center + y_range)
-    #         return np.array([x0, y0])
-
-    #     initial_positions = np.array([random_in_prior() for _ in range(n_walkers)])
-
-    #     with mp.Pool(processes=n_processes) as pool:
-    #         sampler = emcee.EnsembleSampler(
-    #             n_walkers,
-    #             ndim,
-    #             _log_posterior_func,
-    #             # pass arguments in the exact order of the function signature after 'params'
-    #             args=(x_center, y_center, x_range, y_range,
-    #                   self,             # <-- self_obj
-    #                   dt_true, index, sigma,
-    #                   fix_z, z_s_fix,   # <--- controlling the 'fix_z' logic
-    #                   0, 100),          # z_lower=0, z_upper=100 (if you want them changed, do so here)
-    #             pool=pool
-    #         )
-    #         sampler.run_mcmc(initial_positions, n_steps, progress=True)
-
-    #     chain = sampler.get_chain(discard=burn_in, flat=False)
-    #     flat_samples = chain.reshape((-1, ndim))
-    #     return sampler, flat_samples
-
-    # def localize_mcmc_emcee(self, dt_true, index=0,
-    #                     n_walkers=50, n_steps=5000, burn_in=1000,
-    #                     x_range=50.0, y_range=50.0,
-    #                     z_lower=2.5, z_upper=3.5,
-    #                     sigma=0.05,
-    #                     random_seed=42,
-    #                     n_processes=8):
-    #     """
-    #     MCMC with parallelization via emcee + multiprocessing,
-    #     sampling (x_src, y_src, z_s) within:
-    #     x_src in [x_center - x_range, x_center + x_range]
-    #     y_src in [y_center - y_range, y_center + y_range]
-    #     z_s   in [z_lower, z_upper].
-
-    #     The log-posterior function `_log_posterior_func` is:
-    #         def _log_posterior_func(params,
-    #                                 x_center, y_center, x_range, y_range,
-    #                                 self_obj,
-    #                                 dt_true, index, sigma,
-    #                                 fix_z, z_s_fix,
-    #                                 z_lower=0, z_upper=100):
-    #             ...
-    #     Hence we pass arguments in the same order after 'params'.
-    #     """
-    #     np.random.seed(random_seed)
-
-    #     # 1) Grab the lens center for this index
-    #     x_center = self.x_center[index]
-    #     y_center = self.y_center[index]
-
-    #     # 2) 3D parameter space => (x_src, y_src, z_s)
-    #     ndim = 3
-
-    #     # Helper: random positions in the bounding box
-    #     def random_in_prior():
-    #         x0 = np.random.uniform(x_center - x_range, x_center + x_range)
-    #         y0 = np.random.uniform(y_center - y_range, y_center + y_range)
-    #         z0 = np.random.uniform(z_lower, z_upper)
-    #         return np.array([x0, y0, z0])
-
-    #     # Create initial positions for all walkers
-    #     initial_positions = np.array([random_in_prior() for _ in range(n_walkers)])
-
-    #     # Define a custom stretch move (optional)
-    #     move = StretchMove(a=1.8)
-
-    #     # 3) Parallel pool
-    #     with mp.Pool(processes=n_processes) as pool:
-    #         sampler = emcee.EnsembleSampler(
-    #             nwalkers=n_walkers,
-    #             ndim=ndim,
-    #             log_prob_fn=_log_posterior_func,
-    #             # Match the signature:
-    #             #   _log_posterior_func(params,
-    #             #       x_center, y_center, x_range, y_range,
-    #             #       self_obj,
-    #             #       dt_true, index, sigma,
-    #             #       fix_z, z_s_fix,
-    #             #       z_lower=0, z_upper=100)
-    #             args=(
-    #                 x_center, y_center, x_range, y_range,
-    #                 self,               # <-- self_obj
-    #                 dt_true, index, sigma,
-    #                 False, None,        # fix_z=False, z_s_fix=None
-    #                 z_lower, z_upper    # override the defaults in the function
-    #             ),
-    #             pool=pool,
-    #             moves=move
-    #         )
-
-    #         # 4) Run MCMC
-    #         sampler.run_mcmc(initial_positions, n_steps, progress=True)
-
-    #     # 5) Discard burn-in, flatten
-    #     chain = sampler.get_chain(discard=burn_in, flat=False)
-    #     flat_samples = chain.reshape((-1, ndim))
-
-    #     return sampler, flat_samples
 
     def localize_diffevo_then_mcmc_known_cluster(self, dt_true, index=0,
                                # DE settings
