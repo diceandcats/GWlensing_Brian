@@ -362,7 +362,7 @@ class ClusterLensing_fyp:
         D_S_candidate = self.cosmo.angular_diameter_distance(z_s)
         D_LS_candidate = self.cosmo.angular_diameter_distance_z1z2(self.z_l_list[index], z_s)
         if D_S_candidate == 0 or D_LS_candidate == 0:
-            return 1e6
+            return 1e13
         candidate_scale = D_LS_candidate / D_S_candidate
 
         size = self.size[index]
@@ -381,17 +381,18 @@ class ClusterLensing_fyp:
 
         img = self.image_position_z(x_src, y_src, z_s, index=index, candidate_kwargs=candidate_kwargs)
         if len(img[0]) == 0:
-            return 3.5e5
+            return 1e13
         if len(img[0]) != len(dt_true):
-            return abs(len(img[0]) - len(dt_true)) * 5e4
+            return abs(len(img[0]) - len(dt_true)) * 1.4e12
 
         candidate_lens_model = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index])
         t = candidate_lens_model.arrival_time(img[0], img[1], [candidate_kwargs],
                                                x_source=x_src, y_source=y_src)
         dt_candidate = t - t.min()
-        sigma_arr = sigma * np.array(dt_true)
-        mask = np.array(dt_true) != 0
-        chi_sq = np.sum((dt_candidate[mask] - dt_true[mask])**2 / sigma_arr[mask]**2) / 2
+        # sigma_arr = sigma * np.array(dt_true)
+        # mask = np.array(dt_true) != 0
+        # chi_sq = np.sum((dt_candidate[mask] - dt_true[mask])**2 / sigma_arr[mask]**2) / 2
+        chi_sq = np.sum((dt_candidate - dt_true) ** 2) / (2 * sigma ** 2)   # Should include uncertainty by model
         return chi_sq
 
     def localize_known_cluster_diffevo(self, dt_true, index=1):
@@ -543,7 +544,7 @@ class ClusterLensing_fyp:
         initial_positions = np.array([random_in_prior_around_de() for _ in range(n_walkers)])
 
         # 2) Larger a, more aggressive stretch move
-        move = emcee.moves.StretchMove(a=1.9)
+        move = emcee.moves.StretchMove(a=1.5)
 
         with mp.Pool(processes=n_processes) as pool:
             sampler = emcee.EnsembleSampler(
