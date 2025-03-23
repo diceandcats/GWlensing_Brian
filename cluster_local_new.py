@@ -1,11 +1,12 @@
 import numpy as np
+import multiprocessing as mp
 from scipy.optimize import minimize, differential_evolution
 from astropy.cosmology import FlatLambdaCDM
 from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 import emcee
 from emcee.moves import StretchMove
-import multiprocessing as mp
+
 
 # pylint: disable=C0103
 
@@ -501,7 +502,7 @@ class ClusterLensing_fyp:
                                x_range_int=2.0, y_range_int = 2.0, z_range_int = 0.3,
                                z_lower=2.0, z_upper=3.5,
                                sigma=0.05,
-                               n_processes=8):
+                               n_processes=12):
         """
         1) Use differential evolution to find (x_opt, y_opt, z_opt).
         2) Then run MCMC around that solution to get posterior samples.
@@ -544,7 +545,7 @@ class ClusterLensing_fyp:
         initial_positions = np.array([random_in_prior_around_de() for _ in range(n_walkers)])
 
         # 2) Larger a, more aggressive stretch move
-        move = emcee.moves.StretchMove(a=1.5)
+        move = emcee.moves.StretchMove(a=1.7)
 
         with mp.Pool(processes=n_processes) as pool:
             sampler = emcee.EnsembleSampler(
@@ -587,7 +588,7 @@ class ClusterLensing_fyp:
                                x_range_int=1.0, y_range_int = 1.0, z_range_int = 0.2,
                                z_lower=2.0, z_upper=3.5,
                                sigma=0.10,
-                               n_processes=8):
+                               n_processes=12):
 
         opt_pos = None
         opt_chi_sq = None
