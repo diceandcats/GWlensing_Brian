@@ -1,3 +1,4 @@
+# pylint: skip-file
 import numpy as np
 import multiprocessing as mp
 from scipy.optimize import minimize, differential_evolution
@@ -5,8 +6,8 @@ from astropy.cosmology import FlatLambdaCDM
 from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 import emcee
-from emcee.moves import StretchMove
-
+from concurrent.futures import ProcessPoolExecutor
+from wrapper import BatchingPool
 
 # pylint: disable=C0103
 
@@ -191,7 +192,7 @@ class ClusterLensing_fyp:
             y_center=self.y_center[int(index)]
         )
         return image_positions
-    
+
     def image_position_z_Hubble(self, x_src, y_src, z, Hubble = 70, index=0, candidate_kwargs=None):
         """
         Returns the image positions at source (x_src, y_src) for a given candidate source redshift z and Hubble constant.
@@ -278,7 +279,7 @@ class ClusterLensing_fyp:
         t = lens_model.arrival_time(x_img, y_img, [kwargs], x_source=x_src, y_source=y_src)
         dt = t - t.min()
         return dt
-    
+
     def time_delay_z(self, x_img, y_img, z_s, index=0, x_src=None, y_src=None):
         D_S_candidate = self.cosmo.angular_diameter_distance(z_s)
         D_LS_candidate = self.cosmo.angular_diameter_distance_z1z2(self.z_l_list[index], z_s)
@@ -303,7 +304,7 @@ class ClusterLensing_fyp:
                                                x_source=x_src, y_source=y_src)
         dt = t - t.min()
         return dt
-    
+
     def my_image_and_delay_for_xyz(self, x_src, y_src, z_s, index=0):
         # 1) Re-scale the deflection/potential maps for the new z_s
         D_S_candidate = self.cosmo.angular_diameter_distance(z_s)
@@ -317,7 +318,7 @@ class ClusterLensing_fyp:
         candidate_alpha_x = self.alpha_maps_x_orig[index] * candidate_scale
         candidate_alpha_y = self.alpha_maps_y_orig[index] * candidate_scale
         candidate_potential = self.lens_potential_maps_orig[index] * candidate_scale
-        
+
         candidate_kwargs = {
             'grid_interp_x': x_grid,
             'grid_interp_y': x_grid,
@@ -330,7 +331,7 @@ class ClusterLensing_fyp:
         x_img, y_img = self.image_position_z(x_src, y_src, z_s,
                                             index=index,
                                             candidate_kwargs=candidate_kwargs)
-        
+
         # 3) Then compute time delay
         dt = self.time_delay_z(x_img, y_img, z_s,
                             index=index,
@@ -363,7 +364,7 @@ class ClusterLensing_fyp:
         D_S_candidate = self.cosmo.angular_diameter_distance(z_s)
         D_LS_candidate = self.cosmo.angular_diameter_distance_z1z2(self.z_l_list[index], z_s)
         if D_S_candidate == 0 or D_LS_candidate == 0:
-            return 1e13
+            return 5e5
         candidate_scale = D_LS_candidate / D_S_candidate
 
         size = self.size[index]
@@ -382,18 +383,17 @@ class ClusterLensing_fyp:
 
         img = self.image_position_z(x_src, y_src, z_s, index=index, candidate_kwargs=candidate_kwargs)
         if len(img[0]) == 0:
-            return 1e13
+            return 1e5
         if len(img[0]) != len(dt_true):
-            return abs(len(img[0]) - len(dt_true)) * 1.4e12
+            return abs(len(img[0]) - len(dt_true)) * 1.4e4
 
         candidate_lens_model = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index])
         t = candidate_lens_model.arrival_time(img[0], img[1], [candidate_kwargs],
                                                x_source=x_src, y_source=y_src)
         dt_candidate = t - t.min()
-        # sigma_arr = sigma * np.array(dt_true)
-        # mask = np.array(dt_true) != 0
-        # chi_sq = np.sum((dt_candidate[mask] - dt_true[mask])**2 / sigma_arr[mask]**2) / 2
-        chi_sq = np.sum((dt_candidate - dt_true) ** 2) / (2 * sigma ** 2)   # Should include uncertainty by model
+        sigma_arr = sigma * np.array(dt_true)
+        mask = np.array(dt_true) != 0
+        chi_sq = np.sum((dt_candidate[mask] - dt_true[mask])**2 / sigma_arr[mask]**2) / 2 # included some error of lens model
         return chi_sq
 
     def localize_known_cluster_diffevo(self, dt_true, index=1):
@@ -433,9 +433,9 @@ class ClusterLensing_fyp:
         y_center = self.y_center[int(index)]
         x_min, x_max = x_center - 50, x_center + 50
         y_min, y_max = y_center - 50, y_center + 50
-        z_lower = 2.0
-        z_upper = 3.5
-        bounds = [(x_min, x_max), (y_min, y_max), (z_lower, z_upper)]
+        z_lower = 1.0
+        z_upper = 5.0
+        bounds = [(x_min, x_max), (y_min, y_max), (z_lower,z_upper)]
 
         # def objective(params):
         #     x_src, y_src, z_candidate = params
@@ -458,15 +458,15 @@ class ClusterLensing_fyp:
             recombination=0.7,
             polish=False,
             updating='deferred',
-            workers=-1,
+            workers=12,
             disp=True,
             callback=callback_fn
             )
-        
+
         x_opt, y_opt, z_opt = result.x
         min_chi_sq = result.fun
 
-        if min_chi_sq > 5 * threshold:
+        if min_chi_sq > 1.5 * threshold:
             return None, None, None, None
 
         return x_opt, y_opt, z_opt, min_chi_sq
@@ -481,7 +481,7 @@ class ClusterLensing_fyp:
         min_chi_sq = min(chi_sqs)
         index = chi_sqs.index(min_chi_sq)
         return index, src_guess[index], min_chi_sq, src_guess, chi_sqs
-    
+
     def localize_diffevo_with_z(self, dt_true):
         chi_sqs = []
         src_guess = []
@@ -502,7 +502,7 @@ class ClusterLensing_fyp:
                                x_range_int=2.0, y_range_int = 2.0, z_range_int = 0.3,
                                z_lower=2.0, z_upper=3.5,
                                sigma=0.05,
-                               n_processes=12):
+                               ):
         """
         1) Use differential evolution to find (x_opt, y_opt, z_opt).
         2) Then run MCMC around that solution to get posterior samples.
@@ -517,7 +517,7 @@ class ClusterLensing_fyp:
         if x_opt is None and y_opt is None:
             print("DE failed, try another cluster.")
             return None, None, None, None
-        
+
         print(f"DE best solution for cluster {index}: x={x_opt:.3f}, y={y_opt:.3f}, z={z_opt:.3f}, chi^2={min_chi_sq:.3f}")
 
         x_center = x_opt
@@ -545,40 +545,40 @@ class ClusterLensing_fyp:
         initial_positions = np.array([random_in_prior_around_de() for _ in range(n_walkers)])
 
         # 2) Larger a, more aggressive stretch move
-        move = emcee.moves.StretchMove(a=1.7)
+        move = emcee.moves.StretchMove(a=1.8)
 
-        with mp.Pool(processes=n_processes) as pool:
-            sampler = emcee.EnsembleSampler(
-                nwalkers=n_walkers,
-                ndim=ndim,
-                log_prob_fn=_log_posterior_func,
-                args=(
-                    x_center, y_center, x_range_prior, y_range_prior,
-                    self,               # <-- self_obj
-                    dt_true, index, sigma,
-                    False, None,        # fix_z=False, z_s_fix=None
-                    z_lower, z_upper    # override the defaults in the function
-                    ),    
-                pool=pool,
-                moves=move
-            )
+        # Create a ProcessPoolExecutor and wrap it in our batching pool
+        with ProcessPoolExecutor() as executor:
+            with BatchingPool(executor, batch_size=3) as batching_pool:
+                sampler = emcee.EnsembleSampler(
+                    nwalkers=n_walkers,
+                    ndim=ndim,
+                    log_prob_fn=_log_posterior_func,
+                    args=(
+                        x_center, y_center, x_range_prior, y_range_prior,
+                        self,               # self_obj instance (must be pickleable)
+                        dt_true, index, sigma,
+                        False, None,        # fix_z=False, z_s_fix=None
+                        z_lower, z_upper    # z bounds for the prior
+                    ),
+                    moves=move,
+                    pool=batching_pool
+                )
+                
+                # Run the MCMC sampler
+                sampler.run_mcmc(initial_positions, n_steps, progress=True)
+                flat_samples = sampler.get_chain(discard=burn_in, flat=True)
 
-            # 3) Run MCMC
-            sampler.run_mcmc(initial_positions, n_steps, progress=True)
-
-        # 4) Discard burn-in, flatten
-        flat_samples = sampler.get_chain(discard=burn_in, flat=True)
-        #flat_samples = chain.reshape((-1, ndim))
-
-        # 5) Analyze or return results
-        # e.g. median or best fit from MCMC
-        x_median = np.median(flat_samples[:,0])
-        y_median = np.median(flat_samples[:,1])
-        z_median = np.median(flat_samples[:,2])
+        # -------------------------------------------------------
+        # STEP 3: Process the MCMC results
+        # -------------------------------------------------------
+        x_median = np.median(flat_samples[:, 0])
+        y_median = np.median(flat_samples[:, 1])
+        z_median = np.median(flat_samples[:, 2])
         print(f"MCMC median after DE: x={x_median:.2f}, y={y_median:.2f}, z={z_median:.2f}")
 
         return (x_opt, y_opt, z_opt, min_chi_sq), (x_median, y_median, z_median), sampler, flat_samples
-    
+
     def localize_diffevo_then_mcmc(self, dt_true,
                                # DE settings
                                early_stop=1e6,
@@ -587,7 +587,7 @@ class ClusterLensing_fyp:
                                x_range_prior=10.0, y_range_prior=10.0,
                                x_range_int=1.0, y_range_int = 1.0, z_range_int = 0.2,
                                z_lower=2.0, z_upper=3.5,
-                               sigma=0.10,
+                               sigma=0.05,
                                n_processes=12):
 
         opt_pos = None
@@ -595,19 +595,18 @@ class ClusterLensing_fyp:
         opt_sampler = None
         opt_flat_samples = None
         opt_index = None
-        
+
 
         for i in range(6):
             index = i
-            _, medians, sampler, flat_samples = self.localize_diffevo_then_mcmc_known_cluster(dt_true,  index,
-                               early_stop,
-                               n_walkers, n_steps, burn_in,
-                               x_range_prior, y_range_prior,
-                               x_range_int, y_range_int, z_range_int,
-                               z_lower, z_upper,
-                               sigma,
-                               n_processes)
-            
+            _, medians, sampler, flat_samples = self.localize_diffevo_then_mcmc_known_cluster(dt_true, index,
+                                           early_stop=early_stop,
+                                           n_walkers=n_walkers, n_steps=n_steps, burn_in=burn_in,
+                                           x_range_prior=x_range_prior, y_range_prior=y_range_prior,
+                                           x_range_int=x_range_int, y_range_int=y_range_int, z_range_int=z_range_int,
+                                           z_lower=z_lower, z_upper=z_upper,
+                                           sigma=sigma)
+
             if medians is None:
                 print("Nothing found for this index.")
                 continue
@@ -619,7 +618,7 @@ class ClusterLensing_fyp:
             # 4) Extract the parameter set with largest log-likelihood
             best_params = flat_samples[best_idx]
             chi_sq = self.chi_squared_with_z(best_params, dt_true, index)
-            
+
             if opt_chi_sq is None or chi_sq <= opt_chi_sq:
                 opt_pos = best_params
                 opt_chi_sq = chi_sq
