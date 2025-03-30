@@ -2,7 +2,7 @@
 import numpy as np
 import multiprocessing as mp
 from scipy.optimize import minimize, differential_evolution
-from astropy.cosmology import FlatLambdaCDM
+from astropy.cosmology import FlatLambdaCDM, default_cosmology
 from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 import emcee
@@ -180,7 +180,7 @@ class ClusterLensing_fyp:
         Returns the image positions at source (x_src, y_src) for a given candidate source redshift z.
         If candidate_kwargs is provided, it is used instead of the stored self.kwargs_list.
         """
-        lens_model_z = LensModel(lens_model_list=['INTERPOL'], z_source=z, z_lens=self.z_l_list[index])
+        lens_model_z = LensModel(lens_model_list=['INTERPOL'], z_source=z, z_lens=self.z_l_list[index], cosmo=self.cosmo)
         solver_z = LensEquationSolver(lens_model_z)
         kwargs_lens = [candidate_kwargs] if candidate_kwargs is not None else [self.kwargs_list[index]]
         image_positions = solver_z.image_position_from_source(
@@ -299,18 +299,45 @@ class ClusterLensing_fyp:
             'f_y': alpha_y
         }
 
-        lens_model_2 = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index])
+        lens_model_2 = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index], cosmo=self.cosmo)
+        t = lens_model_2.arrival_time(x_img, y_img, [candidate_kwargs_2],
+                                               x_source=x_src, y_source=y_src)
+        dt = t - t.min()
+        return dt
+    
+    def time_delay_z_Hubble(self, x_img, y_img, z_s, Hubble=70, index=0, x_src=None, y_src=None):
+        cosmo = FlatLambdaCDM(H0=Hubble, Om0=0.3)
+        D_S_candidate = cosmo.angular_diameter_distance(z_s)
+        D_LS_candidate = cosmo.angular_diameter_distance_z1z2(self.z_l_list[index], z_s)
+        candidate_scale = D_LS_candidate / D_S_candidate
+        size = self.size[index]
+        pix = self.pixscale[index]
+        x_grid = np.linspace(0, size - 1, size) * pix
+        alpha_x = self.alpha_maps_x_orig[index] * candidate_scale
+        alpha_y = self.alpha_maps_y_orig[index] * candidate_scale
+        potential = self.lens_potential_maps_orig[index] * candidate_scale
+        candidate_kwargs_2 = {
+            'grid_interp_x': x_grid,
+            'grid_interp_y': x_grid,
+            'f_': potential * pix**2,
+            'f_x': alpha_x,
+            'f_y': alpha_y
+        }
+
+        lens_model_2 = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index], cosmo=cosmo)
         t = lens_model_2.arrival_time(x_img, y_img, [candidate_kwargs_2],
                                                x_source=x_src, y_source=y_src)
         dt = t - t.min()
         return dt
 
-    def my_image_and_delay_for_xyz(self, x_src, y_src, z_s, index=0):
+    def image_and_delay_for_xyz(self, x_src, y_src, z_s, index=0):
         # 1) Re-scale the deflection/potential maps for the new z_s
         D_S_candidate = self.cosmo.angular_diameter_distance(z_s)
+        print(f"D_S: {D_S_candidate:.3f}")
         D_LS_candidate = self.cosmo.angular_diameter_distance_z1z2(self.z_l_list[index], z_s)
+        print(f"D_LS: {D_LS_candidate:.3f}")
         candidate_scale = D_LS_candidate / D_S_candidate
-        
+        print(f"Candidate scale: {candidate_scale:.3f}")
         size = self.size[index]
         pix = self.pixscale[index]
         x_grid = np.linspace(0, size - 1, size) * pix
@@ -338,6 +365,44 @@ class ClusterLensing_fyp:
                             x_src=x_src,
                             y_src=y_src)
         return (x_img, y_img, dt)
+    
+    def image_and_delay_for_xyzH(self, x_src, y_src, z_s, Hubble=70, index=0):
+        # 1) Re-scale the deflection/potential maps for the new z_s
+        cosmo = FlatLambdaCDM(H0=Hubble, Om0=0.3)
+        D_S_candidate = cosmo.angular_diameter_distance(z_s)
+        print(f"D_S: {D_S_candidate:.3f}")
+        D_LS_candidate = cosmo.angular_diameter_distance_z1z2(self.z_l_list[index], z_s)
+        print(f"D_LS: {D_LS_candidate:.3f}")
+        candidate_scale = D_LS_candidate / D_S_candidate
+        print(f"Candidate scale: {candidate_scale:.3f}")
+        size = self.size[index]
+        pix = self.pixscale[index]
+        x_grid = np.linspace(0, size - 1, size) * pix
+        
+        candidate_alpha_x = self.alpha_maps_x_orig[index] * candidate_scale
+        candidate_alpha_y = self.alpha_maps_y_orig[index] * candidate_scale
+        candidate_potential = self.lens_potential_maps_orig[index] * candidate_scale
+
+        candidate_kwargs = {
+            'grid_interp_x': x_grid,
+            'grid_interp_y': x_grid,
+            'f_': candidate_potential * pix**2,
+            'f_x': candidate_alpha_x,
+            'f_y': candidate_alpha_y
+        }
+        # 2) Solve for image positions, using that candidate_kwargs
+        x_img, y_img = self.image_position_z_Hubble(x_src, y_src, z_s, Hubble=Hubble,
+                                            index=index,
+                                            candidate_kwargs=candidate_kwargs)
+
+        # 3) Then compute time delay
+        dt = self.time_delay_z_Hubble(x_img, y_img, z_s, Hubble=Hubble,
+                            index=index,
+                            x_src=x_src,
+                            y_src=y_src)
+        return (x_img, y_img, dt)
+
+
 
     def chi_squared(self, src_guess, dt_true, index=0, sigma=0.05):
         x_src, y_src = src_guess
@@ -458,7 +523,7 @@ class ClusterLensing_fyp:
             recombination=0.7,
             polish=False,
             updating='deferred',
-            workers=12,
+            workers=-1,
             disp=True,
             callback=callback_fn
             )
