@@ -2,7 +2,7 @@
 import numpy as np
 import multiprocessing as mp
 from scipy.optimize import minimize, differential_evolution
-from astropy.cosmology import FlatLambdaCDM, default_cosmology
+from astropy.cosmology import FlatLambdaCDM
 from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 import emcee
@@ -133,7 +133,7 @@ class ClusterLensing_fyp:
             }
             self.kwargs_list.append(kwargs)
             lens_model_list = ['INTERPOL']
-            lensmodel = LensModel(lens_model_list=lens_model_list, z_source=z_s, z_lens=z_l_default)
+            lensmodel = LensModel(lens_model_list=lens_model_list, z_source=z_s, z_lens=z_l_default, cosmo=self.cosmo, cosmology_model=None)
             solver = LensEquationSolver(lensmodel)
             self.lens_models.append(lensmodel)
             self.solvers.append(solver)
@@ -180,7 +180,7 @@ class ClusterLensing_fyp:
         Returns the image positions at source (x_src, y_src) for a given candidate source redshift z.
         If candidate_kwargs is provided, it is used instead of the stored self.kwargs_list.
         """
-        lens_model_z = LensModel(lens_model_list=['INTERPOL'], z_source=z, z_lens=self.z_l_list[index], cosmo=self.cosmo)
+        lens_model_z = LensModel(lens_model_list=['INTERPOL'], z_source=z, z_lens=self.z_l_list[index], cosmo=self.cosmo, cosmology_model=None)
         solver_z = LensEquationSolver(lens_model_z)
         kwargs_lens = [candidate_kwargs] if candidate_kwargs is not None else [self.kwargs_list[index]]
         image_positions = solver_z.image_position_from_source(
@@ -199,7 +199,7 @@ class ClusterLensing_fyp:
         If candidate_kwargs is provided, it is used instead of the stored self.kwargs_list.
         """
         cosmo = FlatLambdaCDM(H0=Hubble, Om0=0.3)
-        lens_model_z = LensModel(lens_model_list=['INTERPOL'], z_source=z, z_lens=self.z_l_list[index], cosmo=cosmo)
+        lens_model_z = LensModel(lens_model_list=['INTERPOL'], z_source=z, z_lens=self.z_l_list[index], cosmo=cosmo, cosmology_model=None)
         solver_z = LensEquationSolver(lens_model_z)
         kwargs_lens = [candidate_kwargs] if candidate_kwargs is not None else [self.kwargs_list[index]]
         image_positions = solver_z.image_position_from_source(
@@ -299,7 +299,7 @@ class ClusterLensing_fyp:
             'f_y': alpha_y
         }
 
-        lens_model_2 = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index], cosmo=self.cosmo)
+        lens_model_2 = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index], cosmo=self.cosmo, cosmology_model=None)
         t = lens_model_2.arrival_time(x_img, y_img, [candidate_kwargs_2],
                                                x_source=x_src, y_source=y_src)
         dt = t - t.min()
@@ -324,7 +324,7 @@ class ClusterLensing_fyp:
             'f_y': alpha_y
         }
 
-        lens_model_2 = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index], cosmo=cosmo)
+        lens_model_2 = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index], cosmo=cosmo, cosmology_model=None)
         t = lens_model_2.arrival_time(x_img, y_img, [candidate_kwargs_2],
                                                x_source=x_src, y_source=y_src)
         dt = t - t.min()
@@ -370,11 +370,11 @@ class ClusterLensing_fyp:
         # 1) Re-scale the deflection/potential maps for the new z_s
         cosmo = FlatLambdaCDM(H0=Hubble, Om0=0.3)
         D_S_candidate = cosmo.angular_diameter_distance(z_s)
-        print(f"D_S: {D_S_candidate:.3f}")
+        
         D_LS_candidate = cosmo.angular_diameter_distance_z1z2(self.z_l_list[index], z_s)
-        print(f"D_LS: {D_LS_candidate:.3f}")
+        
         candidate_scale = D_LS_candidate / D_S_candidate
-        print(f"Candidate scale: {candidate_scale:.3f}")
+        
         size = self.size[index]
         pix = self.pixscale[index]
         x_grid = np.linspace(0, size - 1, size) * pix
@@ -448,17 +448,17 @@ class ClusterLensing_fyp:
 
         img = self.image_position_z(x_src, y_src, z_s, index=index, candidate_kwargs=candidate_kwargs)
         if len(img[0]) == 0:
-            return 1e5
+            return 5e4
         if len(img[0]) != len(dt_true):
-            return abs(len(img[0]) - len(dt_true)) * 1.4e4
+            return abs(len(img[0]) - len(dt_true)) * 0.7e4
 
-        candidate_lens_model = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index])
+        candidate_lens_model = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index],cosmo=self.cosmo, cosmology_model=None)
         t = candidate_lens_model.arrival_time(img[0], img[1], [candidate_kwargs],
                                                x_source=x_src, y_source=y_src)
         dt_candidate = t - t.min()
         sigma_arr = sigma * np.array(dt_true)
         mask = np.array(dt_true) != 0
-        chi_sq = np.sum((dt_candidate[mask] - dt_true[mask])**2 / sigma_arr[mask]**2) / 2 # included some error of lens model
+        chi_sq = np.sum((dt_candidate[mask] - dt_true[mask])**2 / sigma_arr[mask]**2) # included some error of lens model
         return chi_sq
 
     def localize_known_cluster_diffevo(self, dt_true, index=1):

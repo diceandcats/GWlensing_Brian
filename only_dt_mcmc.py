@@ -9,7 +9,6 @@ from tqdm import tqdm
 from lenstronomy.LensModel.lens_model import LensModel
 from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 from cluster_local_new import ClusterLensing_fyp
-from astropy.cosmology import FlatLambdaCDM
 import pandas as pd
 import corner
 
@@ -71,56 +70,127 @@ if __name__ == "__main__":
     pixscale_list = [0.2, 0.25, 0.25, 0.2, 0.2, 0.2]
     cluster = ClusterLensing_fyp(datax_list, datay_list, data_psi_list, 0.5, 1, pixscale_list, diff_z=False)
 
-# de + mcmc with unknown cluster
+    # de + mcmc with unknown cluster
 
-parameters = [110.9,88.7,3.1,2] # x, y, z, index
-dt_obs = cluster.image_and_delay_for_xyz(parameters[0], parameters[1], parameters[2], parameters[3])[2]
-print("True time delays:", dt_obs)
+    parameters = [72.4,57.2,2.9,3] # x, y, z, index
+    dt_obs = cluster.image_and_delay_for_xyz(parameters[0], parameters[1], parameters[2], parameters[3])[2]
+    print("True time delays:", dt_obs)
 
-opt_pos = None
-opt_chi_sq = None
-opt_sampler = None
-opt_flat_samples = None
-opt_index = None
+    opt_pos = None
+    opt_chi_sq = None
+    opt_sampler = None
+    opt_flat_samples = None
+    opt_index = None
+    opt_acceptance_fraction = None
 
-try:
-    for i in range(6):
-        index = i
-        _, medians, sampler, flat_samples = cluster.localize_diffevo_then_mcmc_known_cluster(dt_obs, index,
-                                        early_stop=0.01,
-                                        n_walkers=12, n_steps=5000, burn_in=2500,
-                                        x_range_prior=10.0, y_range_prior=10.0,
-                                        x_range_int=3.0, y_range_int=3.0, z_range_int=0.5,
-                                        z_lower=1.0, z_upper=5.0,
-                                        sigma=0.05)
+    n_steps = 30000
+    n_burn_in = 15000
 
-        if medians is None:
-            print("Nothing found for this index.")
-            continue
+    try:
+        for i in range(6):
+            index = i
+            _, medians, sampler, flat_samples = cluster.localize_diffevo_then_mcmc_known_cluster(dt_obs, index,
+                                            early_stop=0.01,
+                                            n_walkers=15, n_steps=n_steps, burn_in=n_burn_in,
+                                            x_range_prior=10.0, y_range_prior=10.0,
+                                            x_range_int=3.0, y_range_int=3.0, z_range_int=0.5,
+                                            z_lower=1.0, z_upper=5.0,
+                                            sigma=0.05)
 
-        log_probs = sampler.get_log_prob(discard=2500, flat=True)  # shape (n_samples,)
-        # 3) Find the index of the maximum log-likelihood
-        best_idx = np.argmax(log_probs)
+            if medians is None:
+                print("Nothing found for this index.")
+                continue
 
-        # 4) Extract the parameter set with largest log-likelihood
-        best_params = flat_samples[best_idx]
-        chi_sq = cluster.chi_squared_with_z(best_params, dt_obs, index)
+            flat_samples = sampler.get_chain(discard=n_burn_in, flat=True)
+            log_probs = sampler.get_log_prob(discard=n_burn_in, flat=True)
 
-        if opt_chi_sq is None or chi_sq <= opt_chi_sq:
-            opt_pos = best_params
-            opt_chi_sq = chi_sq
-            opt_sampler = sampler
-            opt_flat_samples = flat_samples
-            opt_index = index
-            print("Replaced original opt.")
-except KeyboardInterrupt:
-    print("Interrupted.")
+            # Find best by likelihood
+            best_idx_ll = np.argmax(log_probs)
+            best_params_ll = flat_samples[best_idx_ll]
+
+            # Choose best_params (here by smallest likelihood)
+            best_params = best_params_ll
+            print("Best parameters (by likelihood):", best_params)
+            chi_sq = cluster.chi_squared_with_z(best_params, dt_obs, index)
+
+            # Get the acceptance fraction of the sampler
+            acceptance_fraction = np.mean(sampler.acceptance_fraction)
+            if opt_chi_sq is None or chi_sq <= opt_chi_sq:
+                opt_pos = best_params
+                opt_chi_sq = chi_sq
+                opt_sampler = sampler
+                opt_flat_samples = flat_samples
+                opt_index = index
+                opt_acceptance_fraction = acceptance_fraction
+                print("Replaced original opt.")
+                
+    except KeyboardInterrupt:
+        print("Interrupted.")
+        print("Best fit parameters:", opt_pos)
+        print("Best fit index:", opt_index)
+        print("Optimized Chi squared value:", opt_chi_sq)
+        print("samples shape:", opt_flat_samples.shape)
+        print("Acceptance fraction:", opt_acceptance_fraction)
+
+        burn_in = n_burn_in
+        chain = opt_sampler.get_chain(flat=False)
+        log_probs = opt_sampler.get_log_prob(discard=burn_in, flat=True)
+        n_steps, n_walkers, ndim = chain.shape
+        labels = ["x_src", "y_src", "z_s"]
+
+        # --- Plot Trace Plots ---
+        fig, axes = plt.subplots(ndim, figsize=(10, 7), sharex=True)
+        for i in range(ndim):
+            ax = axes[i]
+            for walker in range(n_walkers):
+                ax.plot(chain[:, walker, i], alpha=0.3)
+            ax.set_ylabel(labels[i])
+        axes[-1].set_xlabel("Step Number")
+        plt.suptitle("Trace Plots for MCMC Parameters", fontsize=16)
+        plt.tight_layout()
+        #plt.savefig('de_mcmc/0.05dt/de_mcmc_trace_1.pdf')
+        plt.show()
+
+        # --- Plot Corner Plot ---
+        # Flatten the chain (each walker’s chain concatenated) after burn-in.
+        flat_samples = opt_sampler.get_chain(flat=True)
+
+        figure = corner.corner(
+            flat_samples,
+            labels=labels,
+            quantiles=[0.025, 0.5, 0.975],  # 95% interval
+            show_titles=True,
+            truths=[parameters[0], parameters[1], parameters[2]],  # True values
+            smooth=1.0,  # Smooth out contours
+            bins=30,     # Increase the number of bins
+        )
+
+        #plt.savefig('de_mcmc/0.05dt/de_mcmc_corner_1.pdf')
+        plt.show()
+        exit()
+
+
     print("Best fit parameters:", opt_pos)
     print("Best fit index:", opt_index)
     print("Optimized Chi squared value:", opt_chi_sq)
     print("samples shape:", opt_flat_samples.shape)
+    print("Acceptance fraction:", opt_acceptance_fraction)
 
-    burn_in = 1500
+    src = pd.read_csv('/home/dices/Research/GWlensing_Brian/src_pos_for_dist_with_z_de+mcmc.csv')
+    src.at[i, 'indices'] = parameters[3]
+    src.at[i, 'x'] = parameters[0]
+    src.at[i, 'y'] = parameters[1]
+    src.at[i, 'z'] = parameters[2]
+    src.at[i, 'localized_index'] = opt_index
+    src.at[i, 'localized_x'] = opt_pos[0]
+    src.at[i, 'localized_y'] = opt_pos[1]
+    src.at[i, 'localized_z'] = opt_pos[2]
+    src.at[i, 'localized_chi_sq'] = opt_chi_sq
+    src.to_csv('/home/dices/Research/GWlensing_Brian/src_pos_for_dist_with_z_de+mcmc.csv', index=False)
+
+    # Assuming sampler is your emcee sampler object and burn_in is defined.
+    # Retrieve the chain; shape: (n_steps, n_walkers, ndim)
+    burn_in = n_burn_in
     chain = opt_sampler.get_chain(flat=False)
     log_probs = opt_sampler.get_log_prob(discard=burn_in, flat=True)
     n_steps, n_walkers, ndim = chain.shape
@@ -136,7 +206,7 @@ except KeyboardInterrupt:
     axes[-1].set_xlabel("Step Number")
     plt.suptitle("Trace Plots for MCMC Parameters", fontsize=16)
     plt.tight_layout()
-    #plt.savefig('de_mcmc/0.05dt/de_mcmc_trace_1.pdf')
+    #plt.savefig('de_mcmc/de_mcmc_trace_fixz.pdf')
     plt.show()
 
     # --- Plot Corner Plot ---
@@ -153,62 +223,5 @@ except KeyboardInterrupt:
         bins=30,     # Increase the number of bins
     )
 
-    #plt.savefig('de_mcmc/0.05dt/de_mcmc_corner_1.pdf')
+    #plt.savefig('de_mcmc/de_mcmc_corner_fixz.pdf')
     plt.show()
-    exit()
-
-
-print("Best fit parameters:", opt_pos)
-print("Best fit index:", opt_index)
-print("Optimized Chi squared value:", opt_chi_sq)
-print("samples shape:", opt_flat_samples.shape)
-
-src = pd.read_csv('/home/dices/Research/GWlensing_Brian/src_pos_for_dist_with_z_de+mcmc.csv')
-src.at[i, 'indices'] = parameters[3]
-src.at[i, 'x'] = parameters[0]
-src.at[i, 'y'] = parameters[1]
-src.at[i, 'z'] = parameters[2]
-src.at[i, 'localized_index'] = opt_index
-src.at[i, 'localized_x'] = opt_pos[0]
-src.at[i, 'localized_y'] = opt_pos[1]
-src.at[i, 'localized_z'] = opt_pos[2]
-src.at[i, 'localized_chi_sq'] = opt_chi_sq
-src.to_csv('/home/dices/Research/GWlensing_Brian/src_pos_for_dist_with_z_de+mcmc.csv', index=False)
-
-# Assuming sampler is your emcee sampler object and burn_in is defined.
-# Retrieve the chain; shape: (n_steps, n_walkers, ndim)
-burn_in = 1500
-chain = opt_sampler.get_chain(flat=False)
-log_probs = opt_sampler.get_log_prob(discard=burn_in, flat=True)
-n_steps, n_walkers, ndim = chain.shape
-labels = ["x_src", "y_src", "z_s"]
-
-# --- Plot Trace Plots ---
-fig, axes = plt.subplots(ndim, figsize=(10, 7), sharex=True)
-for i in range(ndim):
-    ax = axes[i]
-    for walker in range(n_walkers):
-        ax.plot(chain[:, walker, i], alpha=0.3)
-    ax.set_ylabel(labels[i])
-axes[-1].set_xlabel("Step Number")
-plt.suptitle("Trace Plots for MCMC Parameters", fontsize=16)
-plt.tight_layout()
-#plt.savefig('de_mcmc/de_mcmc_trace_fixz.pdf')
-plt.show()
-
-# --- Plot Corner Plot ---
-# Flatten the chain (each walker’s chain concatenated) after burn-in.
-flat_samples = opt_sampler.get_chain(flat=True)
-
-figure = corner.corner(
-    flat_samples,
-    labels=labels,
-    quantiles=[0.025, 0.5, 0.975],  # 95% interval
-    show_titles=True,
-    truths=[parameters[0], parameters[1], parameters[2]],  # True values
-    smooth=1.0,  # Smooth out contours
-    bins=30,     # Increase the number of bins
-)
-
-#plt.savefig('de_mcmc/de_mcmc_corner_fixz.pdf')
-plt.show()
