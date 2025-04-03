@@ -72,7 +72,7 @@ if __name__ == "__main__":
 
     # de + mcmc with unknown cluster
 
-    parameters = [72.4,57.2,2.9,3] # x, y, z, index
+    parameters = [71.3,56.9,3.44,3] # x, y, z, index
     dt_obs = cluster.image_and_delay_for_xyz(parameters[0], parameters[1], parameters[2], parameters[3])[2]
     print("True time delays:", dt_obs)
 

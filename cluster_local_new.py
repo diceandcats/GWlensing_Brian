@@ -448,9 +448,9 @@ class ClusterLensing_fyp:
 
         img = self.image_position_z(x_src, y_src, z_s, index=index, candidate_kwargs=candidate_kwargs)
         if len(img[0]) == 0:
-            return 5e4
+            return 3.831e4
         if len(img[0]) != len(dt_true):
-            return abs(len(img[0]) - len(dt_true)) * 0.7e4
+            return (abs(len(img[0]) - len(dt_true)))** 0.9 * 0.9e4
 
         candidate_lens_model = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index],cosmo=self.cosmo, cosmology_model=None)
         t = candidate_lens_model.arrival_time(img[0], img[1], [candidate_kwargs],
@@ -460,6 +460,58 @@ class ClusterLensing_fyp:
         mask = np.array(dt_true) != 0
         chi_sq = np.sum((dt_candidate[mask] - dt_true[mask])**2 / sigma_arr[mask]**2) # included some error of lens model
         return chi_sq
+    
+    def chi_squared_with_z_Hubble(self, src_guess, dt_true, index=0, sigma=0.05, sigma_lum=0.05, lum_dist_true = None):
+        """
+        Simplified chi-squared function: candidate scale is computed as
+            candidate_scale = D_LS(z_l, z) / D_S(z)
+        because the original deflection maps are normalized to D_LS(z_l, z_s)/D_S(z_s)=1.
+        Scaling is performed here, and image positions are calculated using image_position_z.
+        """
+        x_src, y_src,z_s, Hubble = src_guess
+
+        cosmo = FlatLambdaCDM(H0=Hubble, Om0=0.3)
+        D_S_candidate = cosmo.angular_diameter_distance(z_s)
+        D_LS_candidate = cosmo.angular_diameter_distance_z1z2(self.z_l_list[index], z_s)
+        if D_S_candidate == 0 or D_LS_candidate == 0:
+            return 5e5
+        candidate_scale = D_LS_candidate / D_S_candidate
+
+        size = self.size[index]
+        pix = self.pixscale[index]
+        x_grid = np.linspace(0, size - 1, size) * pix
+        candidate_alpha_x = self.alpha_maps_x_orig[index] * candidate_scale
+        candidate_alpha_y = self.alpha_maps_y_orig[index] * candidate_scale
+        candidate_potential = self.lens_potential_maps_orig[index] * candidate_scale
+        candidate_kwargs = {
+            'grid_interp_x': x_grid,
+            'grid_interp_y': x_grid,
+            'f_': candidate_potential * pix**2,
+            'f_x': candidate_alpha_x,
+            'f_y': candidate_alpha_y
+        }
+
+        img = self.image_position_z_Hubble(x_src, y_src, z_s, Hubble=Hubble, index=index, candidate_kwargs=candidate_kwargs)
+        
+        if len(img[0]) == 0:
+            return 3.831e4
+        if len(img[0]) != len(dt_true):
+            return (abs(len(img[0]) - len(dt_true)))** 0.9 * 0.9e4
+
+        candidate_lens_model = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index],cosmo=cosmo, cosmology_model=None)
+        
+        t = candidate_lens_model.arrival_time(img[0], img[1], [candidate_kwargs],
+                                               x_source=x_src, y_source=y_src)
+        
+        dt_candidate = t - t.min()
+        sigma_arr = sigma * np.array(dt_true)
+        mask = np.array(dt_true) != 0
+        chi_sq_dt = np.sum((dt_candidate[mask] - dt_true[mask])**2 / sigma_arr[mask]**2) # included some error of lens model
+
+        # Calculate the luminosity distance and chi-squared
+        lum_dist_candidate = cosmo.luminosity_distance(z_s).value
+        chi_sq_lum = (lum_dist_candidate - lum_dist_true)**2 / sigma_lum**2
+        return chi_sq_dt + chi_sq_lum
 
     def localize_known_cluster_diffevo(self, dt_true, index=1):
         x_center = self.x_center[int(index)]
@@ -535,6 +587,48 @@ class ClusterLensing_fyp:
             return None, None, None, None
 
         return x_opt, y_opt, z_opt, min_chi_sq
+    
+    def localize_known_cluster_diffevo_with_z_Hubble(self, dt_true, index=1, threshold=1e-2, sigma=0.05, sigma_lum=0.05, lum_dist_true = None):
+        x_center = self.x_center[int(index)]
+        y_center = self.y_center[int(index)]
+        x_min, x_max = x_center - 50, x_center + 50
+        y_min, y_max = y_center - 50, y_center + 50
+        z_lower = 1.0
+        z_upper = 5.0
+        H0_lower = 63
+        H0_upper = 82
+        bounds = [(x_min, x_max), (y_min, y_max), (z_lower,z_upper), (H0_lower, H0_upper)]
+
+
+        def callback_fn(xk, convergence):
+            if self.chi_squared_with_z_Hubble(xk, dt_true, index, lum_dist_true=lum_dist_true) < threshold:
+                return True
+            return False
+
+        result = differential_evolution(
+            self.chi_squared_with_z_Hubble,
+            bounds,
+            args=(dt_true, index, sigma, sigma_lum, lum_dist_true),
+            strategy='rand1bin',
+            maxiter=150,
+            popsize=40,
+            tol=1e-7,
+            mutation=(0.5, 1),
+            recombination=0.7,
+            polish=False,
+            updating='deferred',
+            workers=-1,
+            disp=True,
+            callback=callback_fn
+            )
+
+        x_opt, y_opt, z_opt, H0_opt = result.x
+        min_chi_sq = result.fun
+
+        if min_chi_sq > 1.5 * threshold:
+            return None, None, None, None
+
+        return x_opt, y_opt, z_opt, H0_opt, min_chi_sq
 
     def localize_diffevo(self, dt_true):
         chi_sqs = []
