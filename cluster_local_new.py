@@ -72,6 +72,35 @@ def _log_posterior_func(params,
     log_prior = 0.0
     return log_prior + log_likelihood
 
+def _log_posterior_func_Hubble(params,x_center, y_center, x_range, y_range,
+                        self_obj,
+                        dt_true, index, sigma,
+                        fix_z, z_s_fix,
+                        z_lower, z_upper, H0_lower, H0_upper, sigma_lum, lum_dist_true):
+    """
+    Global (picklable) log-posterior function for emcee with Hubble constant.
+    """
+    # 1) Unpack params differently if fix_z is True
+    if fix_z:
+        x_src, y_src, Hubble = params
+        z_s = z_s_fix
+    else:
+        x_src, y_src, z_s, Hubble = params
+    # 2) Uniform prior checks
+    in_x = (x_center - x_range <= x_src <= x_center + x_range)
+    in_y = (y_center - y_range <= y_src <= y_center + y_range)
+    in_z = (z_lower <= z_s <= z_upper)
+    in_Hubble = (Hubble >= H0_lower and Hubble <= H0_upper)
+    if not (in_x and in_y and in_z and in_Hubble):
+        return -np.inf
+    # 3) Log-likelihood = -0.5 * chi^2
+    chi_sq = self_obj.chi_squared_with_z_Hubble((x_src, y_src, z_s, Hubble),
+                                            dt_true, index=index, sigma=sigma, sigma_lum=sigma_lum, lum_dist_true=lum_dist_true)
+    log_likelihood = -0.5 * chi_sq
+    # Uniform prior => log_prior = 0 in these bounds
+    log_prior = 0.0
+    return log_prior + log_likelihood
+
 class ClusterLensing_fyp:
     """
     Class for localization.
@@ -493,9 +522,9 @@ class ClusterLensing_fyp:
 
         img = self.image_position_z_Hubble(x_src, y_src, z_s, Hubble=Hubble, index=index, candidate_kwargs=candidate_kwargs)
         if len(img[0]) == 0:
-            return 3.831e5
+            return 2.0165e4
         if len(img[0]) != len(dt_true):
-            return (abs(len(img[0]) - len(dt_true)))** 0.9 * 0.9e5
+            return (abs(len(img[0]) - len(dt_true)))** 0.5 * 0.9e4
 
         candidate_lens_model = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index],cosmo=cosmo, cosmology_model=None)
         
@@ -594,8 +623,8 @@ class ClusterLensing_fyp:
         y_min, y_max = y_center - 50, y_center + 50
         z_lower = 1.0
         z_upper = 5.0
-        H0_lower = 69
-        H0_upper = 71
+        H0_lower = 63
+        H0_upper = 82
         bounds = [(x_min, x_max), (y_min, y_max), (z_lower,z_upper), (H0_lower, H0_upper)]
 
 
@@ -625,7 +654,7 @@ class ClusterLensing_fyp:
         min_chi_sq = result.fun
 
         if min_chi_sq > 1.5 * threshold:
-            return None, None, None, None
+            return None, None, None, None, None
 
         return x_opt, y_opt, z_opt, H0_opt, min_chi_sq
 
@@ -787,14 +816,16 @@ class ClusterLensing_fyp:
 
         return opt_index, opt_pos, opt_chi_sq, opt_sampler, opt_flat_samples
     
-    def localize_diffevo_then_mcmc_Hubble(self, dt_true,
+    def localize_diffevo_then_mcmc_known_cluster_Hubble(self, dt_true, index = 1,
                                # DE settings
                                early_stop=1e6,
                                # MCMC settings
-                               n_walkers=24, n_steps=800, burn_in=300,
+                               n_walkers=24, n_steps=8000, burn_in=4000,
                                x_range_prior=10.0, y_range_prior=10.0,
                                x_range_int=2.0, y_range_int = 2.0, z_range_int = 0.3,
                                z_lower=2.0, z_upper=3.5,
+                               # Hubble settings
+                               H0_lower=63, H0_upper=82,
                                sigma=0.05,
                                sigma_lum = 0.05,
                                lum_dist_true = None):
@@ -813,7 +844,7 @@ class ClusterLensing_fyp:
             print("DE failed, try another cluster.")
             return None, None, None, None
 
-        print(f"DE best solution for cluster {index}: x={x_opt:.3f}, y={y_opt:.3f}, z={z_opt:.3f}, chi^2={min_chi_sq:.3f}")
+        print(f"DE best solution for cluster {index}: x={x_opt:.3f}, y={y_opt:.3f}, z={z_opt:.3f}, H0={Hubble_opt:.3f}, chi^2={min_chi_sq:.3f}")
 
         x_center = x_opt
         y_center = y_opt
@@ -838,11 +869,11 @@ class ClusterLensing_fyp:
                 z0 = z_lower
             if z0 > z_upper:
                 z0 = z_upper
-            H0 = np.random.uniform(69, 71)
+            H0 = np.random.uniform(H0_lower, H0_upper)
             return np.array([x0, y0, z0, H0])
         initial_positions = np.array([random_in_prior_around_de() for _ in range(n_walkers)])
         # 2) Larger a, more aggressive stretch move
-        move = emcee.moves.StretchMove(a=1.8)
+        move = emcee.moves.StretchMove(a=1.75)
         # Create a ProcessPoolExecutor and wrap it in our batching pool
         with ProcessPoolExecutor() as executor:
             with BatchingPool(executor, batch_size=3) as batching_pool:
@@ -855,7 +886,7 @@ class ClusterLensing_fyp:
                         self,               # self_obj instance (must be pickleable)
                         dt_true, index, sigma,
                         False, None,        # fix_z=False, z_s_fix=None
-                        z_lower, z_upper, sigma_lum, lum_dist_true
+                        z_lower, z_upper, H0_lower, H0_upper, sigma_lum, lum_dist_true
                     ),
                     moves=move,
                     pool=batching_pool
