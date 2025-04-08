@@ -83,8 +83,8 @@ if __name__ == "__main__":
     opt_index = None
     opt_acceptance_fraction = None
 
-    n_steps = 30000
-    n_burn_in = 15000
+    n_steps = 5000
+    n_burn_in = 2500
 
     try:
         for i in range(6):

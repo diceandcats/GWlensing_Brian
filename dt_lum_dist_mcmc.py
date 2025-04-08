@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     # de + mcmc with unknown cluster
 
-    parameters = [80.1,99.9,3.3,65, 4] # x, y, z, H0, index
+    parameters = [72.4,57.2,2.9,73,3] # x, y, z, H0, index
     dt_obs = cluster.image_and_delay_for_xyzH(parameters[0], parameters[1], parameters[2], parameters[3],parameters[4])[2]
     print("True time delays:", dt_obs)
     cosmos = FlatLambdaCDM(H0=parameters[3], Om0=0.3)
@@ -87,8 +87,8 @@ if __name__ == "__main__":
     opt_index = None
     opt_acceptance_fraction = None
 
-    n_steps = 5000
-    n_burn_in = 2500
+    n_steps = 40000
+    n_burn_in = 20000
 
     try:
         for i in range(6):
@@ -165,9 +165,9 @@ if __name__ == "__main__":
         figure = corner.corner(
             flat_samples,
             labels=labels,
-            quantiles=[0.025, 0.5, 0.975],  # 95% interval
+            quantiles=[0.05, 0.5, 0.95],  # 90% interval
             show_titles=True,
-            truths=[parameters[0], parameters[1], parameters[2],parameters[3]],  # True values
+            truths=[parameters[0], parameters[1], parameters[2], parameters[3]],  # True values
             smooth=1.0,  # Smooth out contours
             bins=30,     # Increase the number of bins
         )
@@ -223,7 +223,7 @@ if __name__ == "__main__":
     figure = corner.corner(
         flat_samples,
         labels=labels,
-        quantiles=[0.025, 0.5, 0.975],  # 95% interval
+        quantiles=[0.05, 0.5, 0.95],  # 90% interval
         show_titles=True,
         truths=[parameters[0], parameters[1], parameters[2], parameters[3]],  # True values
         smooth=1.0,  # Smooth out contours
