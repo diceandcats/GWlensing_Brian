@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     # de + mcmc with unknown cluster
 
-    parameters = [72.4,57.2,2.9,73,3] # x, y, z, H0, index
+    parameters = [75.4,69.2,3.4,66,5] # x, y, z, H0, index
     dt_obs = cluster.image_and_delay_for_xyzH(parameters[0], parameters[1], parameters[2], parameters[3],parameters[4])[2]
     print("True time delays:", dt_obs)
     cosmos = FlatLambdaCDM(H0=parameters[3], Om0=0.3)
@@ -87,8 +87,8 @@ if __name__ == "__main__":
     opt_index = None
     opt_acceptance_fraction = None
 
-    n_steps = 40000
-    n_burn_in = 20000
+    n_steps = 8000
+    n_burn_in = 4000
 
     try:
         for i in range(6):
@@ -183,17 +183,21 @@ if __name__ == "__main__":
     print("samples shape:", opt_flat_samples.shape)
     print("Acceptance fraction:", opt_acceptance_fraction)
 
-    src = pd.read_csv('/home/dices/Research/GWlensing_Brian/src_pos_for_dist_with_z_de+mcmc.csv')
-    src.at[i, 'indices'] = parameters[3]
-    src.at[i, 'x'] = parameters[0]
-    src.at[i, 'y'] = parameters[1]
-    src.at[i, 'z'] = parameters[2]
-    src.at[i, 'localized_index'] = opt_index
-    src.at[i, 'localized_x'] = opt_pos[0]
-    src.at[i, 'localized_y'] = opt_pos[1]
-    src.at[i, 'localized_z'] = opt_pos[2]
-    src.at[i, 'localized_chi_sq'] = opt_chi_sq
-    src.to_csv('/home/dices/Research/GWlensing_Brian/src_pos_for_dist_with_z_de+mcmc.csv', index=False)
+    src = pd.read_csv('/home/dices/Research/GWlensing_Brian/src_pos_for_dist_with_z_H0_de+mcmc.csv')
+    # Read the number of rows in the CSV file
+    new_line = len(src)
+    src.at[new_line, 'indices'] = parameters[4]
+    src.at[new_line, 'x'] = parameters[0]
+    src.at[new_line, 'y'] = parameters[1]
+    src.at[new_line, 'z'] = parameters[2]
+    src.at[new_line, 'H0'] = parameters[3]
+    src.at[new_line, 'localized_index'] = opt_index
+    src.at[new_line, 'localized_x'] = opt_pos[0]
+    src.at[new_line, 'localized_y'] = opt_pos[1]
+    src.at[new_line, 'localized_z'] = opt_pos[2]
+    src.at[new_line, 'localized_H0'] = opt_pos[3]
+    src.at[new_line, 'localized_chi_sq'] = opt_chi_sq
+    src.to_csv('/home/dices/Research/GWlensing_Brian/src_pos_for_dist_with_z_H0_de+mcmc.csv', index=False)
 
     # Assuming sampler is your emcee sampler object and burn_in is defined.
     # Retrieve the chain; shape: (n_steps, n_walkers, ndim)
