@@ -522,9 +522,9 @@ class ClusterLensing_fyp:
 
         img = self.image_position_z_Hubble(x_src, y_src, z_s, Hubble=Hubble, index=index, candidate_kwargs=candidate_kwargs)
         if len(img[0]) == 0:
-            return 8.945e3
+            return 6.709e3
         if len(img[0]) != len(dt_true):
-            return (abs(len(img[0]) - len(dt_true)))** 0.5 * 0.4e4
+            return (abs(len(img[0]) - len(dt_true)))** 0.5 * 0.3e4
 
         candidate_lens_model = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index],cosmo=cosmo, cosmology_model=None)
         

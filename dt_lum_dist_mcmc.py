@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     # de + mcmc with unknown cluster
 
-    parameters = [80.02,99.7,3.12,80.3,4] # x, y, z, H0, index
+    parameters = [81.6,72.0,2.6,71,0] # x, y, z, H0, index
     dt_obs = cluster.image_and_delay_for_xyzH(parameters[0], parameters[1], parameters[2], parameters[3],parameters[4])[2]
     print("True time delays:", dt_obs)
     cosmos = FlatLambdaCDM(H0=parameters[3], Om0=0.3)
