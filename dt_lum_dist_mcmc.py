@@ -4,14 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from astropy.io import fits
 from astropy.cosmology import FlatLambdaCDM
-from math import ceil, floor
-from scipy.optimize import minimize
-from tqdm import tqdm
-from lenstronomy.LensModel.lens_model import LensModel
-from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 from cluster_local_new import ClusterLensing_fyp
 import pandas as pd
 import corner
+import arviz as az
 
 if __name__ == "__main__":
     # inject data
@@ -73,7 +69,7 @@ if __name__ == "__main__":
 
     # de + mcmc with unknown cluster
 
-    parameters = [81.6,72.0,2.6,71,0] # x, y, z, H0, index
+    parameters = [82.4,75.6,2.72,78,0] # x, y, z, H0, index
     dt_obs = cluster.image_and_delay_for_xyzH(parameters[0], parameters[1], parameters[2], parameters[3],parameters[4])[2]
     print("True time delays:", dt_obs)
     cosmos = FlatLambdaCDM(H0=parameters[3], Om0=0.3)
@@ -91,7 +87,7 @@ if __name__ == "__main__":
     n_burn_in = 4000
 
     try:
-        for i in range(6):
+        for i in range(2):
             index = i
             _, medians, sampler, flat_samples = cluster.localize_diffevo_then_mcmc_known_cluster_Hubble(dt_obs, index,
                                             early_stop=0.02,
@@ -130,6 +126,19 @@ if __name__ == "__main__":
                 opt_index = index
                 opt_acceptance_fraction = acceptance_fraction
                 print("Replaced original opt.")
+
+                samples_analysis = sampler.get_chain()
+                log_prob_analysis = sampler.get_log_prob()
+                idata = az.from_emcee(
+                    sampler,
+                    var_names=["x_src", "y_src", "z_s", "H0"],
+                )
+                summary = az.summary(
+                    idata,
+                    var_names=["x_src", "y_src", "z_s", "H0"],
+                    round_to=2,
+                )
+                print(summary[["mean", "ess_bulk", "r_hat"]])
                 
     except KeyboardInterrupt:
         print("Interrupted.")
@@ -151,11 +160,14 @@ if __name__ == "__main__":
             ax = axes[i]
             for walker in range(n_walkers):
                 ax.plot(chain[:, walker, i], alpha=0.3)
-            ax.set_ylabel(labels[i])
-        axes[-1].set_xlabel("Step Number")
+            ax.set_ylabel(labels[i], fontsize = 14)
+            ax.tick_params(axis='both', labelsize=12)
+
+        axes[-1].set_xlabel("Step Number", fontsize = 14)
+        axes[-1].tick_params(axis='both', labelsize=12)
         plt.suptitle("Trace Plots for MCMC Parameters", fontsize=16)
         plt.tight_layout()
-        #plt.savefig('de_mcmc/0.05dt/de_mcmc_trace_1.pdf')
+        #plt.savefig('de_mcmc/de_mcmc_trace_fixz.pdf')
         plt.show()
 
         # --- Plot Corner Plot ---
@@ -170,6 +182,8 @@ if __name__ == "__main__":
             truths=[parameters[0], parameters[1], parameters[2], parameters[3]],  # True values
             smooth=1.0,  # Smooth out contours
             bins=30,     # Increase the number of bins
+            label_kwargs={"fontsize": 14},  # Set axis label font size
+            title_kwargs={"fontsize": 12},  # Set title font size
         )
 
         #plt.savefig('de_mcmc/0.05dt/de_mcmc_corner_1.pdf')
@@ -213,8 +227,11 @@ if __name__ == "__main__":
         ax = axes[i]
         for walker in range(n_walkers):
             ax.plot(chain[:, walker, i], alpha=0.3)
-        ax.set_ylabel(labels[i])
-    axes[-1].set_xlabel("Step Number")
+        ax.set_ylabel(labels[i], fontsize = 14)
+        ax.tick_params(axis='both', labelsize=12)
+
+    axes[-1].set_xlabel("Step Number", fontsize = 14)
+    axes[-1].tick_params(axis='both', labelsize=12)
     plt.suptitle("Trace Plots for MCMC Parameters", fontsize=16)
     plt.tight_layout()
     #plt.savefig('de_mcmc/de_mcmc_trace_fixz.pdf')
@@ -232,6 +249,8 @@ if __name__ == "__main__":
         truths=[parameters[0], parameters[1], parameters[2], parameters[3]],  # True values
         smooth=1.0,  # Smooth out contours
         bins=30,     # Increase the number of bins
+        label_kwargs={"fontsize": 14},  # Set axis label font size
+        title_kwargs={"fontsize": 12},  # Set title font size
     )
 
     #plt.savefig('de_mcmc/de_mcmc_corner_fixz.pdf')

@@ -873,7 +873,7 @@ class ClusterLensing_fyp:
             return np.array([x0, y0, z0, H0])
         initial_positions = np.array([random_in_prior_around_de() for _ in range(n_walkers)])
         # 2) Larger a, more aggressive stretch move
-        move = emcee.moves.StretchMove(a=1.75)
+        move = emcee.moves.StretchMove(a=1.85)
         # Create a ProcessPoolExecutor and wrap it in our batching pool
         with ProcessPoolExecutor() as executor:
             with BatchingPool(executor, batch_size=3) as batching_pool:
