@@ -11,6 +11,7 @@ from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 from cluster_local_new import ClusterLensing_fyp
 import pandas as pd
 import corner
+import arviz as az
 
 if __name__ == "__main__":
     # inject data
@@ -72,7 +73,7 @@ if __name__ == "__main__":
 
     # de + mcmc with unknown cluster
 
-    parameters = [71.3,56.9,3.44,3] # x, y, z, index
+    parameters = [70.0,75.0,3.12,1] # x, y, z, index
     dt_obs = cluster.image_and_delay_for_xyz(parameters[0], parameters[1], parameters[2], parameters[3])[2]
     print("True time delays:", dt_obs)
 
@@ -83,18 +84,18 @@ if __name__ == "__main__":
     opt_index = None
     opt_acceptance_fraction = None
 
-    n_steps = 5000
-    n_burn_in = 2500
+    n_steps = 8000
+    n_burn_in = 4000
 
     try:
-        for i in range(6):
+        for i in range(1,2):
             index = i
             _, medians, sampler, flat_samples = cluster.localize_diffevo_then_mcmc_known_cluster(dt_obs, index,
                                             early_stop=0.01,
                                             n_walkers=15, n_steps=n_steps, burn_in=n_burn_in,
                                             x_range_prior=10.0, y_range_prior=10.0,
                                             x_range_int=3.0, y_range_int=3.0, z_range_int=0.5,
-                                            z_lower=1.0, z_upper=5.0,
+                                            z_lower=1.0, z_upper=6.0,
                                             sigma=0.05)
 
             if medians is None:
@@ -116,17 +117,30 @@ if __name__ == "__main__":
             # Get the acceptance fraction of the sampler
             acceptance_fraction = np.mean(sampler.acceptance_fraction)
             if opt_chi_sq is None or chi_sq <= opt_chi_sq:
-                opt_pos = best_params
+                opt_pos = medians        # using median for stable estimation
                 opt_chi_sq = chi_sq
                 opt_sampler = sampler
                 opt_flat_samples = flat_samples
                 opt_index = index
                 opt_acceptance_fraction = acceptance_fraction
                 print("Replaced original opt.")
+
+            samples_analysis = sampler.get_chain()
+            log_prob_analysis = sampler.get_log_prob()
+            idata = az.from_emcee(
+                sampler,
+                var_names=["x_src", "y_src", "z_s"],
+            )
+            summary = az.summary(
+                idata,
+                var_names=["x_src", "y_src", "z_s"],
+                round_to=2,
+            )
+            print(summary[["mean", "ess_bulk", "r_hat"]])
                 
     except KeyboardInterrupt:
         print("Interrupted.")
-        print("Best fit parameters:", opt_pos)
+        print("Best fit parameters (median):", opt_pos)
         print("Best fit index:", opt_index)
         print("Optimized Chi squared value:", opt_chi_sq)
         print("samples shape:", opt_flat_samples.shape)
@@ -170,22 +184,23 @@ if __name__ == "__main__":
         exit()
 
 
-    print("Best fit parameters:", opt_pos)
+    print("Best fit parameters (median):", opt_pos)
     print("Best fit index:", opt_index)
     print("Optimized Chi squared value:", opt_chi_sq)
     print("samples shape:", opt_flat_samples.shape)
     print("Acceptance fraction:", opt_acceptance_fraction)
 
     src = pd.read_csv('/home/dices/Research/GWlensing_Brian/src_pos_for_dist_with_z_de+mcmc.csv')
-    src.at[i, 'indices'] = parameters[3]
-    src.at[i, 'x'] = parameters[0]
-    src.at[i, 'y'] = parameters[1]
-    src.at[i, 'z'] = parameters[2]
-    src.at[i, 'localized_index'] = opt_index
-    src.at[i, 'localized_x'] = opt_pos[0]
-    src.at[i, 'localized_y'] = opt_pos[1]
-    src.at[i, 'localized_z'] = opt_pos[2]
-    src.at[i, 'localized_chi_sq'] = opt_chi_sq
+    new_line = len(src)
+    src.at[new_line, 'indices'] = parameters[3]
+    src.at[new_line, 'x'] = parameters[0]
+    src.at[new_line, 'y'] = parameters[1]
+    src.at[new_line, 'z'] = parameters[2]
+    src.at[new_line, 'localized_index'] = opt_index
+    src.at[new_line, 'localized_x'] = opt_pos[0]
+    src.at[new_line, 'localized_y'] = opt_pos[1]
+    src.at[new_line, 'localized_z'] = opt_pos[2]
+    src.at[new_line, 'localized_chi_sq'] = opt_chi_sq
     src.to_csv('/home/dices/Research/GWlensing_Brian/src_pos_for_dist_with_z_de+mcmc.csv', index=False)
 
     # Assuming sampler is your emcee sampler object and burn_in is defined.
@@ -216,7 +231,7 @@ if __name__ == "__main__":
     figure = corner.corner(
         flat_samples,
         labels=labels,
-        quantiles=[0.025, 0.5, 0.975],  # 95% interval
+        quantiles=[0.05, 0.5, 0.95],  # 95% interval
         show_titles=True,
         truths=[parameters[0], parameters[1], parameters[2]],  # True values
         smooth=1.0,  # Smooth out contours

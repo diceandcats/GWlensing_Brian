@@ -261,22 +261,22 @@ class ClusterLensing_fyp:
     #                 count += 1
     #     return srcs, indices
 
-    # def rand_src_test_1_cluster(self, n_each=50, n=5, index=0):
-    #     srcs = []
-    #     indices = []
-    #     count = 0
-    #     while count < n_each:
-    #         x_center = self.x_center[int(index)]
-    #         x_src = np.random.uniform(x_center - 30, x_center + 30)
-    #         y_center = self.y_center[int(index)]
-    #         y_src = np.random.uniform(y_center - 30, y_center + 30)
-    #         img_positions = self.image_position(x_src, y_src, index)
-    #         if len(img_positions[0]) >= n:
-    #             print(f"Cluster index: {index}, Number of images: {len(img_positions[0])}")
-    #             srcs.append((x_src, y_src))
-    #             indices.append(index)
-    #             count += 1
-    #     return srcs, indices
+    def rand_src_test_1_cluster(self, n_each=50, n=5, index=0):
+        srcs = []
+        indices = []
+        count = 0
+        while count < n_each:
+            x_center = self.x_center[int(index)]
+            x_src = np.random.uniform(x_center - 30, x_center + 30)
+            y_center = self.y_center[int(index)]
+            y_src = np.random.uniform(y_center - 30, y_center + 30)
+            img_positions = self.image_and_delay_for_xyzH(x_src, y_src, 3.54, Hubble=72, index = index)
+            if len(img_positions[0]) >= n:
+                print(f"Cluster index: {index}, Number of images: {len(img_positions[0])}")
+                srcs.append((x_src, y_src))
+                indices.append(index)
+                count += 1
+        return srcs, indices
 
     # def correct_indices_first(self, df):
     #     corrected_indices = []
@@ -335,6 +335,11 @@ class ClusterLensing_fyp:
         return dt
     
     def time_delay_z_Hubble(self, x_img, y_img, z_s, Hubble=70, index=0, x_src=None, y_src=None):
+        
+        # use only for rand_1_src
+        # if len(x_img) == 0:
+        #     return []
+        
         cosmo = FlatLambdaCDM(H0=Hubble, Om0=0.3)
         D_S_candidate = cosmo.angular_diameter_distance(z_s)
         D_LS_candidate = cosmo.angular_diameter_distance_z1z2(self.z_l_list[index], z_s)
@@ -423,6 +428,10 @@ class ClusterLensing_fyp:
         x_img, y_img = self.image_position_z_Hubble(x_src, y_src, z_s, Hubble=Hubble,
                                             index=index,
                                             candidate_kwargs=candidate_kwargs)
+        
+        # use only for rand_1_src
+        # if len(x_img) == 0:
+        #     return ([], [], [])
 
         # 3) Then compute time delay
         dt = self.time_delay_z_Hubble(x_img, y_img, z_s, Hubble=Hubble,
@@ -477,9 +486,9 @@ class ClusterLensing_fyp:
 
         img = self.image_position_z(x_src, y_src, z_s, index=index, candidate_kwargs=candidate_kwargs)
         if len(img[0]) == 0:
-            return 3.831e4
+            return 1.5653e4
         if len(img[0]) != len(dt_true):
-            return (abs(len(img[0]) - len(dt_true)))** 0.9 * 0.9e4
+            return (abs(len(img[0]) - len(dt_true)))** 0.5 * 0.7e4
 
         candidate_lens_model = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.z_l_list[index],cosmo=self.cosmo, cosmology_model=None)
         t = candidate_lens_model.arrival_time(img[0], img[1], [candidate_kwargs],

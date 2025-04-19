@@ -69,11 +69,15 @@ if __name__ == "__main__":
 
     # de + mcmc with unknown cluster
 
-    parameters = [82.4,75.6,2.72,78,0] # x, y, z, H0, index
+    parameters = [77.87952094526975, 98.53320541586146,3.54,72,4] # x, y, z, H0, index
     dt_obs = cluster.image_and_delay_for_xyzH(parameters[0], parameters[1], parameters[2], parameters[3],parameters[4])[2]
     print("True time delays:", dt_obs)
+
+    
     cosmos = FlatLambdaCDM(H0=parameters[3], Om0=0.3)
+
     lum_dist_true = cosmos.luminosity_distance(parameters[2]).value
+    #print(cluster.chi_squared_with_z_Hubble(tuple([105.25810261,85.54573261,3.18181263,72.93719321]), dt_obs, parameters[4], lum_dist_true=lum_dist_true))
     print("True luminosity distances:", lum_dist_true)
 
     opt_pos = None
@@ -87,7 +91,7 @@ if __name__ == "__main__":
     n_burn_in = 4000
 
     try:
-        for i in range(2):
+        for i in range(4,5):
             index = i
             _, medians, sampler, flat_samples = cluster.localize_diffevo_then_mcmc_known_cluster_Hubble(dt_obs, index,
                                             early_stop=0.02,
@@ -119,7 +123,7 @@ if __name__ == "__main__":
             # Get the acceptance fraction of the sampler
             acceptance_fraction = np.mean(sampler.acceptance_fraction)
             if opt_chi_sq is None or chi_sq <= opt_chi_sq:
-                opt_pos = best_params
+                opt_pos = medians                   # using median for stable estimation
                 opt_chi_sq = chi_sq
                 opt_sampler = sampler
                 opt_flat_samples = flat_samples
@@ -142,7 +146,7 @@ if __name__ == "__main__":
                 
     except KeyboardInterrupt:
         print("Interrupted.")
-        print("Best fit parameters:", opt_pos)
+        print("Best fit parameters (median):", opt_pos)
         print("Best fit index:", opt_index)
         print("Optimized Chi squared value:", opt_chi_sq)
         print("samples shape:", opt_flat_samples.shape)
@@ -191,7 +195,7 @@ if __name__ == "__main__":
         exit()
 
 
-    print("Best fit parameters:", opt_pos)
+    print("Best fit parameters (median):", opt_pos)
     print("Best fit index:", opt_index)
     print("Optimized Chi squared value:", opt_chi_sq)
     print("samples shape:", opt_flat_samples.shape)
