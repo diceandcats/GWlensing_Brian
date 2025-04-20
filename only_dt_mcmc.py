@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     # de + mcmc with unknown cluster
 
-    parameters = [70.0,75.0,3.12,1] # x, y, z, index
+    parameters = [110.0,88.6,3.54,2] # x, y, z, index
     dt_obs = cluster.image_and_delay_for_xyz(parameters[0], parameters[1], parameters[2], parameters[3])[2]
     print("True time delays:", dt_obs)
 
@@ -88,10 +88,10 @@ if __name__ == "__main__":
     n_burn_in = 4000
 
     try:
-        for i in range(1,2):
+        for i in range(2,3):
             index = i
             _, medians, sampler, flat_samples = cluster.localize_diffevo_then_mcmc_known_cluster(dt_obs, index,
-                                            early_stop=0.01,
+                                            early_stop=0.02,
                                             n_walkers=15, n_steps=n_steps, burn_in=n_burn_in,
                                             x_range_prior=10.0, y_range_prior=10.0,
                                             x_range_int=3.0, y_range_int=3.0, z_range_int=0.5,
@@ -236,6 +236,8 @@ if __name__ == "__main__":
         truths=[parameters[0], parameters[1], parameters[2]],  # True values
         smooth=1.0,  # Smooth out contours
         bins=30,     # Increase the number of bins
+        label_kwargs={"fontsize": 14},  # Set axis label font size
+        title_kwargs={"fontsize": 12},  # Set title font size
     )
 
     #plt.savefig('de_mcmc/de_mcmc_corner_fixz.pdf')
