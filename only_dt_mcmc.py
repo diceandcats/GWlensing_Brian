@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     # de + mcmc with unknown cluster
 
-    parameters = [110.0,88.6,3.54,2] # x, y, z, index
+    parameters = [68.2,80.8,3.42,1] # x, y, z, index
     dt_obs = cluster.image_and_delay_for_xyz(parameters[0], parameters[1], parameters[2], parameters[3])[2]
     print("True time delays:", dt_obs)
 
@@ -88,14 +88,14 @@ if __name__ == "__main__":
     n_burn_in = 4000
 
     try:
-        for i in range(2,3):
+        for i in range(1,2):
             index = i
             _, medians, sampler, flat_samples = cluster.localize_diffevo_then_mcmc_known_cluster(dt_obs, index,
                                             early_stop=0.02,
                                             n_walkers=15, n_steps=n_steps, burn_in=n_burn_in,
                                             x_range_prior=10.0, y_range_prior=10.0,
                                             x_range_int=3.0, y_range_int=3.0, z_range_int=0.5,
-                                            z_lower=1.0, z_upper=6.0,
+                                            z_lower=0.8, z_upper=6.0,
                                             sigma=0.05)
 
             if medians is None:
@@ -217,8 +217,11 @@ if __name__ == "__main__":
         ax = axes[i]
         for walker in range(n_walkers):
             ax.plot(chain[:, walker, i], alpha=0.3)
-        ax.set_ylabel(labels[i])
-    axes[-1].set_xlabel("Step Number")
+        ax.set_ylabel(labels[i], fontsize = 14)
+        ax.tick_params(axis='both', labelsize=12)
+
+    axes[-1].set_xlabel("Step Number", fontsize = 14)
+    axes[-1].tick_params(axis='both', labelsize=12)
     plt.suptitle("Trace Plots for MCMC Parameters", fontsize=16)
     plt.tight_layout()
     #plt.savefig('de_mcmc/de_mcmc_trace_fixz.pdf')
