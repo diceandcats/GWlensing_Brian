@@ -914,6 +914,95 @@ class ClusterLensing_fyp:
         print(f"MCMC median after DE: x={x_median:.2f}, y={y_median:.2f}, z={z_median:.2f}, H0={H0_median:.2f}")
         return (x_opt, y_opt, z_opt, Hubble_opt, min_chi_sq), (x_median, y_median, z_median, H0_median), sampler, flat_samples
 
+    def localize_diffevo_then_mcmc_known_cluster_Hubble_oddRatio(self, dt_true, index = 1,
+                               # DE settings
+                               early_stop=1e6,
+                               # MCMC settings
+                               n_walkers=24, n_steps=8000, burn_in=4000,
+                               x_range_prior=10.0, y_range_prior=10.0,
+                               x_range_int=2.0, y_range_int = 2.0, z_range_int = 0.3,
+                               z_lower=2.0, z_upper=3.5,
+                               # Hubble settings
+                               H0_lower=63, H0_upper=82,
+                               sigma=0.05,
+                               sigma_lum = 0.05,
+                               lum_dist_true = None):
+        """
+        1) Use differential evolution to find initial guess (x_opt, y_opt, z_opt, H_0).
+        2) Then run MCMC around that solution to get posterior samples.
+        """
+
+        # -------------------------------------------------------
+        # STEP 1: Run differential evolution to get best guess
+        # -------------------------------------------------------
+        # You can adapt localize_known_cluster_diffevo_with_z to use the 
+        # de_xrange, de_yrange, de_zrange if needed. For now let's just call it directly.
+        x_opt, y_opt, z_opt, Hubble_opt, min_chi_sq = self.localize_known_cluster_diffevo_with_z_Hubble(dt_true, index, threshold=early_stop, sigma=sigma, sigma_lum=sigma_lum, lum_dist_true = lum_dist_true)
+        if x_opt is None and y_opt is None:
+            print("DE failed, try another cluster.")
+            return None, None, None, None
+
+        print(f"DE best solution for cluster {index}: x={x_opt:.3f}, y={y_opt:.3f}, z={z_opt:.3f}, H0={Hubble_opt:.3f}, chi^2={min_chi_sq:.3f}")
+
+        x_center = x_opt
+        y_center = y_opt
+
+        # -------------------------------------------------------
+        # STEP 2: MCMC around that solution
+        # -------------------------------------------------------
+        # We'll do a 3D MCMC on (x_src, y_src, z_s).
+        # We'll define a bounding box for the prior around the DE solution,
+        # e.g. ± x_range for x, ± y_range for y, and [z_lower, z_upper] for z.
+
+        # 1) Create initial positions near the DE solution
+        ndim = 4
+        def random_in_prior_around_de():
+            x0 = np.random.uniform(x_opt -
+                x_range_int, x_opt + x_range_int)
+            y0 = np.random.uniform(y_opt -
+                y_range_int, y_opt + y_range_int)
+            z0 = np.random.uniform(z_opt -
+                z_range_int, z_opt + z_range_int)
+            if z0 < z_lower:
+                z0 = z_lower
+            if z0 > z_upper:
+                z0 = z_upper
+            H0 = np.random.uniform(H0_lower, H0_upper)
+            return np.array([x0, y0, z0, H0])
+        initial_positions = np.array([random_in_prior_around_de() for _ in range(n_walkers)])
+        # 2) Larger a, more aggressive stretch move
+        move = emcee.moves.StretchMove(a=1.85)
+        # Create a ProcessPoolExecutor and wrap it in our batching pool
+        with ProcessPoolExecutor() as executor:
+            with BatchingPool(executor, batch_size=3) as batching_pool:
+                sampler = emcee.EnsembleSampler(
+                    nwalkers=n_walkers,
+                    ndim=ndim,
+                    log_prob_fn=_log_posterior_func_Hubble,
+                    args=(
+                        x_center, y_center, x_range_prior, y_range_prior,
+                        self,               # self_obj instance (must be pickleable)
+                        dt_true, index, sigma,
+                        False, None,        # fix_z=False, z_s_fix=None
+                        z_lower, z_upper, H0_lower, H0_upper, sigma_lum, lum_dist_true
+                    ),
+                    moves=move,
+                    pool=batching_pool
+                )
+                
+                # Run the MCMC sampler
+                sampler.run_mcmc(initial_positions, n_steps, progress=True)
+                flat_samples = sampler.get_chain(discard=burn_in, flat=True)
+        # -------------------------------------------------------
+        # STEP 3: Process the MCMC results
+        # -------------------------------------------------------
+        x_median = np.median(flat_samples[:, 0])
+        y_median = np.median(flat_samples[:, 1])
+        z_median = np.median(flat_samples[:, 2])
+        H0_median = np.median(flat_samples[:, 3])
+        print(f"MCMC median after DE: x={x_median:.2f}, y={y_median:.2f}, z={z_median:.2f}, H0={H0_median:.2f}")
+        return (x_opt, y_opt, z_opt, Hubble_opt, min_chi_sq), (x_median, y_median, z_median, H0_median), sampler, flat_samples
+
     def chi_squared_vector(self, src_guesses, dt_true, index=0, sigma=0.05):
         chi_sqs = np.zeros(src_guesses.shape[0])
         for i, src_guess in enumerate(src_guesses):
