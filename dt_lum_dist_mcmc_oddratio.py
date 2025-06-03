@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
     # de + mcmc with unknown cluster
 
-    parameters = [77.87952094526975, 98.53320541586146,3.54,72,4] # x, y, z, H0, index
+    parameters = [80.1,99.9,3.3,65.0,4] # x, y, z, H0, index
     dt_obs = cluster.image_and_delay_for_xyzH(parameters[0], parameters[1], parameters[2], parameters[3],parameters[4])[2]
     print("True time delays:", dt_obs)
 
@@ -206,10 +206,17 @@ if __name__ == "__main__":
     # load the saved chain and compare their chi-squared values
     for i in range(6):
         index = i
-        data = np.load(OUT_DIR / f"cluster_{index}_posterior.npz")
-        medians_list[i] = data["median"]
-        chi_sq_list[i] = data["chi_sq"]
-        print(f"[{index}] Chi-squared value: {chi_sq}")
+        try:
+            data = np.load(OUT_DIR / f"cluster_{index}_posterior.npz")
+            medians_list[i] = data["median"]
+            chi_sq_list[i] = data["chi_sq"]
+            print(f"[{index}] Chi-squared value: {chi_sq}")
+        except FileNotFoundError:
+            print(f"[{index}] No data found for index {index}. Skipping.")
+            medians_list.append(None)
+            chi_sq_list.append(3e8)  # Assign a large value to avoid selection
+            continue
+        
     
     possible_indices = [i for i in range(6) if chi_sq_list[i] <= 2.3+min(chi_sq_list)]
     print("Possible cluster lens in indices:", possible_indices)
