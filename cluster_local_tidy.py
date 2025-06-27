@@ -266,7 +266,7 @@ class ClusterLensing(ClusterLensingUtils):
         if fit_z:
             bounds["z_s"] = (1.0, 5.0)
         if fit_hubble:
-            bounds["H0"] = (60, 90)
+            bounds["H0"] = (60, 80)
         
         # REMOVED: The local objective_func was here.
 
