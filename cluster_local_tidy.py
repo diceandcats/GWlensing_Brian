@@ -138,6 +138,34 @@ class ClusterLensingUtils:
         
         return lens_model, scaled_kwargs
 
+    def generate_source_positions(self, n_samples: int, index: int, img_no: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Generates random source positions within the cluster's search window.
+        
+        Args:
+        ----
+        n_samples : int
+            Number of random source positions to generate.
+        index : int
+            Index of the cluster model to use for the search window.
+        img_no : int
+            Image number (for future use, if needed).
+
+        Returns:
+        -------
+        Tuple[np.ndarray, np.ndarray, np.ndarray]
+            Arrays of cluster index and x, y source positions.
+        """
+        x_center = self.data.x_center[index]
+        y_center = self.data.y_center[index]
+        search_window = self.data.search_window_list[index]
+        
+        x_src = np.random.uniform(x_center - search_window / 2, x_center + search_window / 2, n_samples)
+        y_src = np.random.uniform(y_center - search_window / 2, y_center + search_window / 2, n_samples)
+
+        cluster_indices = 1
+        return cluster_indices, x_src, y_src
+
 # --- Main Analysis Class ---
 
 class ClusterLensing(ClusterLensingUtils):
