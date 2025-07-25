@@ -44,15 +44,15 @@ if __name__ == "__main__":
         file_dir = os.getcwd()
         fits_filex = os.path.join(
             file_dir,
-            f'GCdata/{full_cluster_name}/william/hlsp_frontier_model_{clustername}_williams_v4_x-arcsec-deflect.fits'
+            f'Research/GWlensing_Brian/GCdata/{full_cluster_name}/diego/hlsp_frontier_model_{clustername}_diego_v4.1_x-arcsec-deflect.fits'
         )
         fits_filey = os.path.join(
             file_dir,
-            f'GCdata/{full_cluster_name}/william/hlsp_frontier_model_{clustername}_williams_v4_y-arcsec-deflect.fits'
+            f'Research/GWlensing_Brian/GCdata/{full_cluster_name}/diego/hlsp_frontier_model_{clustername}_diego_v4.1_y-arcsec-deflect.fits'
         )
         psi_file = os.path.join(
             file_dir,
-            f'GCdata/{full_cluster_name}/william/hlsp_frontier_model_{clustername}_williams_v4_psi.fits'
+            f'Research/GWlensing_Brian/GCdata/{full_cluster_name}/diego/hlsp_frontier_model_{clustername}_diego_v4.1_psi.fits'
         )
 
         with fits.open(fits_filex) as hdulx, fits.open(fits_filey) as hduly, fits.open(psi_file) as hdul_psi:
@@ -66,13 +66,13 @@ if __name__ == "__main__":
             data_psi_list.append(data_psi)
 
     # getting the pixel scale list
-    pixscale_list = [0.2, 0.25, 0.25, 0.2, 0.2, 0.2]
+    pixscale_list = [0.42, 0.51, 0.51, 0.42, 0.42, 0.42]
     lensing_data = LensingData(
     alpha_maps_x=datax_list,
     alpha_maps_y=datay_list,
     lens_potential_maps=data_psi_list,
     pixscale = pixscale_list,
-    z_l_list = [0.375, 0.308, 0.351, 0.397, 0.545, 0.543], # Lens redshifts for the two clusters
+    z_l_list = [0.375, 0.308, 0.348, 0.396, 0.548, 0.544], # Lens redshifts for the two clusters
     # We can use the default x_center, y_center, and search_window_list
     # or override them if needed.
 )
@@ -82,12 +82,12 @@ if __name__ == "__main__":
     cluster = ClusterLensing_fyp(datax_list, datay_list, data_psi_list, 0.5, 1, pixscale_list, diff_z=False)
 
     # de + mcmc with unknown cluster
-    parameters = [77.87952094526975, 98.53320541586146,3.54,72,4] # x, y, z, H0, index
+    parameters = [131,131,3.5,72,2] # x, y, z, H0, index
     dt_obs = cluster.image_and_delay_for_xyzH(parameters[0], parameters[1], parameters[2], parameters[3],parameters[4])[2]
     print("True time delays:", dt_obs)
 
-    test_params = {"x_src" : 77.87952094526975, "y_src": 98.53320541586146, "z_s": 3.54, "H0": 72.0}
-    test_cluster = 4
+    test_params = {"x_src" : 131, "y_src": 131, "z_s": 3.50, "H0": 72}
+    test_cluster = 2
     output = cluster_system.calculate_images_and_delays(
         test_params, test_cluster
     )

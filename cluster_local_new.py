@@ -138,9 +138,9 @@ class ClusterLensing_fyp:
         self.alpha_maps_y_orig = [np.copy(m) for m in alpha_maps_y]
         self.lens_potential_maps_orig = [np.copy(m) for m in lens_potential_maps]
 
-        self.x_center, self.y_center = [90, 75, 110, 70, 90, 70], [70, 80, 95, 60, 93, 65]
-        self.search_window_list = [90.1, 95, 100, 85, 100, 90]
-        self.z_l_list = [0.375, 0.308, 0.351, 0.397, 0.545, 0.543]
+        self.x_center, self.y_center = [99, 132, 131, 109, 125, 107.1], [95, 100, 131, 111, 112, 113.1]
+        self.search_window_list = [100, 95, 95, 100, 120, 100]
+        self.z_l_list = [0.375, 0.308, 0.348, 0.396, 0.548, 0.544]
 
         # Get the size of the deflection maps
         self.size = []

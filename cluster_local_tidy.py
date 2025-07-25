@@ -138,33 +138,6 @@ class ClusterLensingUtils:
         
         return lens_model, scaled_kwargs
 
-    def generate_source_positions(self, n_samples: int, index: int, img_no: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Generates random source positions within the cluster's search window.
-        
-        Args:
-        ----
-        n_samples : int
-            Number of random source positions to generate.
-        index : int
-            Index of the cluster model to use for the search window.
-        img_no : int
-            Image number (for future use, if needed).
-
-        Returns:
-        -------
-        Tuple[np.ndarray, np.ndarray, np.ndarray]
-            Arrays of cluster index and x, y source positions.
-        """
-        x_center = self.data.x_center[index]
-        y_center = self.data.y_center[index]
-        search_window = self.data.search_window_list[index]
-        
-        x_src = np.random.uniform(x_center - search_window / 2, x_center + search_window / 2, n_samples)
-        y_src = np.random.uniform(y_center - search_window / 2, y_center + search_window / 2, n_samples)
-
-        cluster_indices = 1
-        return cluster_indices, x_src, y_src
 
 # --- Main Analysis Class ---
 
@@ -518,5 +491,56 @@ class ClusterLensing(ClusterLensingUtils):
         )
         print(f"-> Saved {flat_samples.shape[0]} samples to {output_path}")
     
+    # Utility functions requiring main analysis functions
+    def generate_source_positions(self, n_samples: int, index: int, search_range: float, img_no: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Generates random source positions within the cluster's search window.
+        
+        Args:
+        ----
+        n_samples : int
+            Number of random source positions to generate.
+        index : int
+            Index of the cluster model to search suitable source positions.
+        search_range : float
+            The search window around the cluster center to generate source positions.
+        img_no : int
+            Image number (for future use, if needed).
 
-    
+        Returns:
+        -------
+        Tuple[np.ndarray, np.ndarray, np.ndarray]
+            Arrays of cluster index and x, y source positions.
+        """
+        x_center = self.data.x_center[index]
+        y_center = self.data.y_center[index]
+        
+        for i in range(6):
+            n = 0
+            while n < n_samples:
+                x_src = np.random.uniform(x_center - search_range, x_center + search_range)
+                y_src = np.random.uniform(y_center - search_range, y_center + search_range)
+                z_s = np.random.uniform(1.0, 5.0)  # Random redshift for the source
+                H0 = np.random.uniform(60, 80)  # Random Hubble constant
+
+                test_params = {"x_src" : x_src, "y_src": y_src, "z_s": z_s, "H0": H0}
+                test_cluster = index
+                output = self.calculate_images_and_delays(
+                    test_params, test_cluster
+                )
+                # Check if the number of images matches the expected count
+                if len(output['image_positions'][0]) == img_no:
+                    n += 1
+                    # Store the valid source positions
+                    if i == 0:
+                        x_srcs = np.array([x_src])
+                        y_srcs = np.array([y_src])
+                        z_ss = np.array([z_s])
+                        H0s = np.array([H0])
+                    else:
+                        x_srcs = np.append(x_srcs, x_src)
+                        y_srcs = np.append(y_srcs, y_src)
+                        z_ss = np.append(z_ss, z_s)
+                        H0s = np.append(H0s, H0)
+
+        return x_srcs, y_srcs, z_ss, H0s
