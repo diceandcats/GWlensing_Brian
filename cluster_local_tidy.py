@@ -492,7 +492,7 @@ class ClusterLensing(ClusterLensingUtils):
         print(f"-> Saved {flat_samples.shape[0]} samples to {output_path}")
     
     # Utility functions requiring main analysis functions
-    def generate_source_positions(self, n_samples: int, index: int, search_range: float, img_no: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def generate_source_positions(self, n_samples: int, index: int, search_range: float, img_no: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Generates random source positions within the cluster's search window.
         
@@ -515,32 +515,28 @@ class ClusterLensing(ClusterLensingUtils):
         x_center = self.data.x_center[index]
         y_center = self.data.y_center[index]
         
-        for i in range(6):
-            n = 0
-            while n < n_samples:
-                x_src = np.random.uniform(x_center - search_range, x_center + search_range)
-                y_src = np.random.uniform(y_center - search_range, y_center + search_range)
-                z_s = np.random.uniform(1.0, 5.0)  # Random redshift for the source
-                H0 = np.random.uniform(60, 80)  # Random Hubble constant
+        n = 0
+        x_srcs = np.array([])
+        y_srcs = np.array([])
+        z_ss = np.array([])
+        H0s = np.array([])
+        while n < n_samples:
+            x_src = np.random.uniform(x_center - search_range, x_center + search_range)
+            y_src = np.random.uniform(y_center - search_range, y_center + search_range)
+            z_s = np.random.uniform(2.0, 4.0)  # Random redshift for the source
+            H0 = np.random.uniform(65, 76)  # Random Hubble constant
 
-                test_params = {"x_src" : x_src, "y_src": y_src, "z_s": z_s, "H0": H0}
-                test_cluster = index
-                output = self.calculate_images_and_delays(
-                    test_params, test_cluster
-                )
-                # Check if the number of images matches the expected count
-                if len(output['image_positions'][0]) == img_no:
-                    n += 1
-                    # Store the valid source positions
-                    if i == 0:
-                        x_srcs = np.array([x_src])
-                        y_srcs = np.array([y_src])
-                        z_ss = np.array([z_s])
-                        H0s = np.array([H0])
-                    else:
-                        x_srcs = np.append(x_srcs, x_src)
-                        y_srcs = np.append(y_srcs, y_src)
-                        z_ss = np.append(z_ss, z_s)
-                        H0s = np.append(H0s, H0)
+            test_params = {"x_src" : x_src, "y_src": y_src, "z_s": z_s, "H0": H0}
+            test_cluster = index
+            output = self.calculate_images_and_delays(
+                test_params, test_cluster
+            )
+            # Check if the number of images matches the expected count
+            if len(output['image_positions'][0]) >= img_no:
+                n += 1
+                x_srcs = np.append(x_srcs, x_src)
+                y_srcs = np.append(y_srcs, y_src)
+                z_ss = np.append(z_ss, z_s)
+                H0s = np.append(H0s, H0)
 
-        return x_srcs, y_srcs, z_ss, H0s
+        return index, x_srcs, y_srcs, z_ss, H0s
