@@ -88,7 +88,7 @@ print("Setup complete. Lensing system initialized.")
 
 # get the dt_true
 # real image pos and dt
-real_params = {"x_src" : 96.3642998642583, "y_src": 96.24579242317353, "z_s": 3.668910475026701, "H0": 75.60819770277777}
+real_params = {"x_src" : 98.11657258686152, "y_src": 97.40629523400526, "z_s": 3.865388515923007, "H0": 67.19278264707727}
 real_cluster = 0
 # Calculate the image positions and time delays for the test parameters
 output = cluster_system.calculate_images_and_delays(
@@ -120,25 +120,141 @@ OUT_DIR.mkdir(exist_ok=True)
 
 # test de then mcmc 
 print("\nRunning the full analysis pipeline...")
-# # Define settings for the MCMC sampler
-# mcmc_settings = {
-#     "n_walkers": 20,      # Number of MCMC walkers
-#     "n_steps": 8000,      # Number of steps per walker
-#     "fit_z": True,        # We want to fit for the source redshift (z_s)
-#     "fit_hubble": True,   # We want to fit for the Hubble constant (H0)
-#     "lum_dist_true": lum_dist_true, # An external "true" luminosity distance measurement (in Mpc)
-#     "sigma_lum": 0.05,     # The fractional error on the luminosity distance
-#     # Define the prior boundaries for the parameters being fit in the MCMC
-#     "z_bounds": (1.0, 5.0),
-#     "H0_bounds": (60, 100)
-# }
+# Define settings for the MCMC sampler
+mcmc_settings = {
+    "n_walkers": 20,      # Number of MCMC walkers
+    "n_steps": 8000,      # Number of steps per walker
+    "fit_z": True,        # We want to fit for the source redshift (z_s)
+    "fit_hubble": True,   # We want to fit for the Hubble constant (H0)
+    "lum_dist_true": lum_dist_true, # An external "true" luminosity distance measurement (in Mpc)
+    "sigma_lum": 0.05,     # The fractional error on the luminosity distance
+    # Define the prior boundaries for the parameters being fit in the MCMC
+    "z_bounds": (1.0, 5.0),
+    "H0_bounds": (50, 100)
+}
 
-# # Call the main analysis function
-# # The function will first run DE to find the best cluster,
-# # then run MCMC on that best-fit model.
-# mcmc_results, accepted_cluster_indices = cluster_system.find_best_fit(
-#     dt_true=dt_true,
-#     run_mcmc=True,
-#     mcmc_settings=mcmc_settings
-# )
-# print(f"\nAnalysis complete. Found {len(mcmc_results)} cluster(s) meeting the MCMC criterion.")
+# Call the main analysis function
+# The function will first run DE to find the best cluster,
+# then run MCMC on that best-fit model.
+mcmc_results, accepted_cluster_indices = cluster_system.find_best_fit(
+    dt_true=dt_true,
+    run_mcmc=True,
+    mcmc_settings=mcmc_settings
+)
+print(f"\nAnalysis complete. Found {len(mcmc_results)} cluster(s) meeting the MCMC criterion.")
+
+for result in mcmc_results:
+        cluster_idx = result['cluster_index']
+        print(f"\n--- Processing Final Results for Cluster {cluster_idx} ---")
+        
+        # --- Step 5: Analyze and Display ---
+        sampler = result['mcmc_sampler']
+        burn_in_steps = 800
+        labels = list(result['params'].keys())
+        flat_samples = sampler.get_chain(discard=burn_in_steps, thin=15, flat=True)
+        
+        print(f"--- MCMC Parameter Constraints for Cluster {cluster_idx} ---")
+        for i in range(len(labels)):
+            mcmc = np.percentile(flat_samples[:, i], [16, 50, 84])
+            q = np.diff(mcmc)
+            print(f"{labels[i]:>7s} = {mcmc[1]:.3f} +{q[1]:.3f} / -{q[0]:.3f}")
+
+        # --- Step 6: Save the Localization Results ---
+        print(f"Saving localization results for Cluster {cluster_idx}...")
+        file_path = os.path.join(OUT_DIR, f"cluster_{cluster_idx}_posterior.npz")
+        
+        cluster_system.save_mcmc_results(
+            sampler=sampler,
+            best_result=result, # Pass the individual result dictionary
+            n_burn_in=burn_in_steps,
+            output_path=file_path,
+            dt_true=dt_true,
+            mcmc_settings=mcmc_settings
+        )
+
+print("\nAll processing finished.")
+
+# Plot the corner and trace plots for the saved MCMC results
+# Specify the directory where your results are saved
+RESULTS_DIR = OUT_DIR
+# Specify the index of the cluster you want to plot
+CLUSTER_INDEX_TO_PLOT = real_cluster
+
+# Construct the full path to the data file
+data_file = os.path.join(RESULTS_DIR, f"cluster_{CLUSTER_INDEX_TO_PLOT}_posterior.npz")
+
+# --- Step 1: Load the Saved Data ---
+# Check if the file exists before trying to load it.
+if not os.path.exists(data_file):
+    print(f"Error: Data file not found at '{data_file}'")
+    print("Please make sure you have run the main analysis script first.")
+else:
+    print(f"Loading data from {data_file}...")
+    # np.load returns a dictionary-like object
+    mcmc_data = np.load(data_file)
+
+    # You can see what's inside the file by printing the keys
+    print("Available data keys:", list(mcmc_data.keys()))
+
+    # Extract the necessary arrays from the loaded data
+    flat_chain = mcmc_data['flat_chain']
+    full_chain = mcmc_data['chain']
+    param_labels = mcmc_data['param_labels']
+    truth_values = real_params['x_src'], real_params['y_src'], real_params['z_s'], real_params['H0']
+
+    # --- Step 2: Create the Corner Plot ---
+    # The corner plot is the best way to visualize the posterior distributions
+    # and the correlations between parameters.
+
+    print("\nGenerating corner plot...")
+    
+    # The corner.corner function takes the flattened (2D) chain of samples
+    # and the labels for each parameter.
+    fig_corner = corner.corner(
+        flat_chain,
+        labels=param_labels,
+        quantiles=[0.05, 0.5, 0.95], # 90% intervals
+        show_titles=True,
+        truths=truth_values,  # If you have true values to plot
+        label_kwargs={"fontsize": 14},  # Set axis label font size
+        title_kwargs={"fontsize": 12},  # Set title font size
+        verbose=False
+    )
+
+    fig_corner.suptitle(f"Corner Plot for Cluster {CLUSTER_INDEX_TO_PLOT}", fontsize=16)
+    
+    # Save the corner plot to a file
+    corner_plot_path = os.path.join(RESULTS_DIR, f"cluster_{CLUSTER_INDEX_TO_PLOT}_corner_from_saved.png")
+    fig_corner.savefig(corner_plot_path)
+    print(f"-> Corner plot saved to {corner_plot_path}")
+    
+
+    # --- Step 3: Create the Trace Plot ---
+    # A trace plot (or "time series plot") shows the value of each parameter at each
+    # step of the MCMC chain for every walker. It is essential for diagnosing
+    # convergence. You are looking for a stationary, "fuzzy caterpillar" look,
+    # which indicates the walkers are well-mixed and exploring the same parameter space.
+
+    print("\nGenerating trace plot...")
+    
+    n_steps, n_walkers, n_dim = full_chain.shape
+    fig_trace, axes = plt.subplots(n_dim, figsize=(12, 2 * n_dim), sharex=True)
+    steps = np.arange(n_steps)
+
+    for i in range(n_dim):
+        ax = axes[i]
+        # The key command: This plots each of the n_walkers' paths as a separate line.
+        ax.plot(steps, full_chain[:, :, i], alpha=0.2)
+        ax.set_ylabel(param_labels[i], fontsize=14)
+        ax.tick_params(axis='both', labelsize=12)
+
+    axes[-1].set_xlabel("Step Number", fontsize = 14)
+    axes[-1].tick_params(axis='both', labelsize=12)
+    fig_trace.suptitle(f"Trace Plot for MCMC parameters", fontsize=16, y=0.99)
+    fig_trace.tight_layout(rect=[0, 0, 1, 0.98])
+
+    trace_plot_path = os.path.join(RESULTS_DIR, f"cluster_{CLUSTER_INDEX_TO_PLOT}_trace.png")
+    fig_trace.savefig(trace_plot_path)
+    print(f"-> Trace plot saved to {trace_plot_path}")
+
+    plt.show()
