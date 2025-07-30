@@ -1,5 +1,4 @@
 # pylint: skip-file
-# cluster_lensing_system.py
 import numpy as np
 from scipy.optimize import differential_evolution
 from astropy.cosmology import FlatLambdaCDM
@@ -236,6 +235,9 @@ class ClusterLensing(ClusterLensingUtils):
         dt_candidate = t - t.min()
         
         mask = np.array(dt_true) != 0
+        
+        # Get the uncertainty for the specific cluster
+        sigma_dt = self.data.uncertainty_alpha[index]
         sigma_arr = sigma_dt * np.array(dt_true)
         chi_sq_dt = np.sum((dt_candidate[mask] - dt_true[mask])**2 / sigma_arr[mask]**2)
         
@@ -405,13 +407,13 @@ class ClusterLensing(ClusterLensingUtils):
                 sigma_lum=sigma_lum,         # Added missing argument
                 de_settings=de_settings
             )
-            results.append({'cluster_index': i, 'params': best_params, 'chi_sq': min_chi_sq})
+            results.append({'cluster_index': i, 'de_params': best_params, 'chi_sq': min_chi_sq}) # DE results for each cluster
         
         # Find the best cluster based on chi-squared
-        best_result = min(results, key=lambda x: x['chi_sq'])
+        best_result = min(results, key=lambda x: x['chi_sq']) # Best DE result with a certain cluster
         print("\n--- DE Optimization Summary ---")
         print(f"Best fit found for Cluster {best_result['cluster_index']} with chi^2 = {best_result['chi_sq']:.3f}")
-        print(f"Best-fit parameters: {best_result['params']}")
+        print(f"Best-fit parameters: {best_result['de_params']}")
 
         accepted_clusters = []
         if run_mcmc:
@@ -426,7 +428,7 @@ class ClusterLensing(ClusterLensingUtils):
                     sampler = self.run_mcmc_sampler(
                         dt_true,
                         result['cluster_index'],
-                        result['params'],
+                        result['de_params'],
                         mcmc_settings
                     )
                     result['mcmc_sampler'] = sampler
@@ -465,7 +467,7 @@ class ClusterLensing(ClusterLensingUtils):
         medians_array = np.median(flat_samples, axis=0)
         
         # Reconstruct the parameter dictionary from the median values
-        param_labels = list(best_result['params'].keys())
+        param_labels = list(best_result['de_params'].keys())
         median_params = {key: val for key, val in zip(param_labels, medians_array)}
 
         # Calculate the chi-squared value for the median-fit parameters

@@ -88,7 +88,7 @@ print("Setup complete. Lensing system initialized.")
 
 # get the dt_true
 # real image pos and dt
-real_params = {"x_src" : 98.11657258686152, "y_src": 97.40629523400526, "z_s": 3.865388515923007, "H0": 67.19278264707727}
+real_params = {"x_src" : 102.28839767102096, "y_src": 94.9052590222844, "z_s": 3.8189293366061423, "H0": 70.84629151296338}
 real_cluster = 0
 # Calculate the image positions and time delays for the test parameters
 output = cluster_system.calculate_images_and_delays(
@@ -149,13 +149,13 @@ for result in mcmc_results:
         
         # --- Step 5: Analyze and Display ---
         sampler = result['mcmc_sampler']
-        burn_in_steps = 800
-        labels = list(result['params'].keys())
+        burn_in_steps = 3000
+        labels = list(result['de_params'].keys())
         flat_samples = sampler.get_chain(discard=burn_in_steps, thin=15, flat=True)
         
         print(f"--- MCMC Parameter Constraints for Cluster {cluster_idx} ---")
         for i in range(len(labels)):
-            mcmc = np.percentile(flat_samples[:, i], [16, 50, 84])
+            mcmc = np.percentile(flat_samples[:, i], [9, 50, 95]) # get the 90% interval by flat_samples
             q = np.diff(mcmc)
             print(f"{labels[i]:>7s} = {mcmc[1]:.3f} +{q[1]:.3f} / -{q[0]:.3f}")
 
@@ -164,7 +164,7 @@ for result in mcmc_results:
         file_path = os.path.join(OUT_DIR, f"cluster_{cluster_idx}_posterior.npz")
         
         cluster_system.save_mcmc_results(
-            sampler=sampler,
+            sampler=sampler,    
             best_result=result, # Pass the individual result dictionary
             n_burn_in=burn_in_steps,
             output_path=file_path,
@@ -192,12 +192,13 @@ else:
     print(f"Loading data from {data_file}...")
     # np.load returns a dictionary-like object
     mcmc_data = np.load(data_file)
+    
 
     # You can see what's inside the file by printing the keys
     print("Available data keys:", list(mcmc_data.keys()))
 
     # Extract the necessary arrays from the loaded data
-    flat_chain = mcmc_data['flat_chain']
+    flat_chain = mcmc_data['flat_chain'] # The 90%/95% interval can be obtained from here (flat_samples)
     full_chain = mcmc_data['chain']
     param_labels = mcmc_data['param_labels']
     truth_values = real_params['x_src'], real_params['y_src'], real_params['z_s'], real_params['H0']
