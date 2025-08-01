@@ -88,7 +88,7 @@ print("Setup complete. Lensing system initialized.")
 
 # get the dt_true
 # real image pos and dt
-real_params = {"x_src" : 102.28839767102096, "y_src": 94.9052590222844, "z_s": 3.8189293366061423, "H0": 70.84629151296338}
+real_params = {"x_src" : 93.9825660589342, "y_src": 93.9320112712318, "z_s": 3.607599569888279, "H0": 68.04202556193249}
 real_cluster = 0
 # Calculate the image positions and time delays for the test parameters
 output = cluster_system.calculate_images_and_delays(
@@ -151,7 +151,7 @@ for result in mcmc_results:
         sampler = result['mcmc_sampler']
         burn_in_steps = 3000
         labels = list(result['de_params'].keys())
-        flat_samples = sampler.get_chain(discard=burn_in_steps, thin=15, flat=True)
+        flat_samples = sampler.get_chain(discard=burn_in_steps, flat=True)
         
         print(f"--- MCMC Parameter Constraints for Cluster {cluster_idx} ---")
         for i in range(len(labels)):
@@ -172,10 +172,27 @@ for result in mcmc_results:
             mcmc_settings=mcmc_settings
         )
 
-print("\nAll processing finished.")
+        # save the best-fit parameters to a CSV file
+        output_csv_path = os.path.join(base_output_dir, f"src_pos_tidy.csv")
+        # Load the existing CSV file
+        src = pd.read_csv(output_csv_path)
+        # Extract the best-fit parameters from the flat samples
+        results = []
+        for i in range(len(labels)):
+            mcmc_sol = np.percentile(flat_samples[:, i], 50)
+            results.append(mcmc_sol)
+        # Append the results to the DataFrame
+        new_line = src.loc[src['localized_index'].isna()].index[0]
+        src.at[new_line, 'localized_index'] = cluster_idx
+        src.at[new_line, 'localized_x'] = results[0]
+        src.at[new_line, 'localized_y'] = results[1]
+        src.at[new_line, 'localized_z'] = results[2]
+        src.at[new_line, 'localized_H0'] = results[3]
+        # Save the updated DataFrame back to the CSV file
+        src.to_csv(output_csv_path, index=False)
+        print(f"Localization results saved to {output_csv_path}")
 
-# Plot the corner and trace plots for the saved MCMC results
-# Specify the directory where your results are saved
+
 RESULTS_DIR = OUT_DIR
 # Specify the index of the cluster you want to plot
 CLUSTER_INDEX_TO_PLOT = real_cluster
