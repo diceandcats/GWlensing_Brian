@@ -88,8 +88,8 @@ print("Setup complete. Lensing system initialized.")
 
 # get the dt_true
 # real image pos and dt
-real_params = {"x_src" : 93.9825660589342, "y_src": 93.9320112712318, "z_s": 3.607599569888279, "H0": 68.04202556193249}
-real_cluster = 0
+real_params = {"x_src" : 128.1660233630986, "y_src": 98.67269834179748, "z_s": 1.6612290811776649, "H0": 73.54527622169407}
+real_cluster = 1
 # Calculate the image positions and time delays for the test parameters
 output = cluster_system.calculate_images_and_delays(
     real_params, real_cluster
@@ -123,14 +123,14 @@ print("\nRunning the full analysis pipeline...")
 # Define settings for the MCMC sampler
 mcmc_settings = {
     "n_walkers": 20,      # Number of MCMC walkers
-    "n_steps": 8000,      # Number of steps per walker
+    "n_steps": 20000,      # Number of steps per walker
     "fit_z": True,        # We want to fit for the source redshift (z_s)
     "fit_hubble": True,   # We want to fit for the Hubble constant (H0)
     "lum_dist_true": lum_dist_true, # An external "true" luminosity distance measurement (in Mpc)
     "sigma_lum": 0.05,     # The fractional error on the luminosity distance
     # Define the prior boundaries for the parameters being fit in the MCMC
     "z_bounds": (1.0, 5.0),
-    "H0_bounds": (50, 100)
+    "H0_bounds": (50, 110)
 }
 
 # Call the main analysis function
