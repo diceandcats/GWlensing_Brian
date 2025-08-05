@@ -130,7 +130,7 @@ mcmc_settings = {
     "sigma_lum": 0.05,     # The fractional error on the luminosity distance
     # Define the prior boundaries for the parameters being fit in the MCMC
     "z_bounds": (1.0, 5.0),
-    "H0_bounds": (50, 110)
+    "H0_bounds": (50, 100)
 }
 
 # Call the main analysis function
