@@ -461,7 +461,7 @@ class ClusterLensing(ClusterLensingUtils):
         # Get the chains and log probabilities, discarding burn-in
         flat_samples = sampler.get_chain(discard=n_burn_in, flat=True)
         log_probs = sampler.get_log_prob(discard=n_burn_in, flat=True)
-        full_chain = sampler.get_chain()
+        full_chain = sampler.get_chain(discard=n_burn_in)
 
         # Calculate the median values for each parameter
         medians_array = np.median(flat_samples, axis=0)
