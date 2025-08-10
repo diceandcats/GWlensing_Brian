@@ -3,6 +3,8 @@ import numpy as np
 from lensing_data_class import LensingData
 from cluster_local_tidy import ClusterLensing
 import os
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from astropy.io import fits
 from astropy.cosmology import FlatLambdaCDM
@@ -10,12 +12,38 @@ import pandas as pd
 import corner
 import arviz as az
 import pathlib
-
+import argparse
 import warnings
+
+from csv_lock import update_csv_row
 
 # Suppressing the lenstronomy warning on astropy.cosmology
 from lenstronomy.LensModel.lens_model import LensModel
 warnings.filterwarnings("ignore", category=UserWarning, module='lenstronomy.LensModel.lens_model')
+
+
+# Parse CLI args
+parser = argparse.ArgumentParser()
+parser.add_argument("--csv", required=True, help="Path to input CSV (with indices,x,y,z,H0,...)")
+parser.add_argument("--row", type=int, required=True, help="Zero-based row index to run")
+args = parser.parse_args()
+
+csv_path = pathlib.Path(args.csv).resolve()
+df = pd.read_csv(csv_path)
+row = df.iloc[args.row]
+
+# real image pos and dt according to the row specified
+real_params = {
+    "x_src": float(row["x"]),
+    "y_src": float(row["y"]),
+    "z_s":  float(row["z"]),
+    "H0":   float(row["H0"]),
+}
+real_cluster = int(row["indices"])
+
+base_output_dir = pathlib.Path("/home/dices/Research/GWlensing_Brian/oddratio")
+OUT_DIR = base_output_dir / f"test_tidy_row{args.row}"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # inject numerical lens model
 
@@ -86,37 +114,18 @@ cluster_system = ClusterLensing(data=lensing_data, z_s_ref=z_s_ref)
 
 print("Setup complete. Lensing system initialized.")
 
-# get the dt_true
-# real image pos and dt
-real_params = {"x_src" : 128.1660233630986, "y_src": 98.67269834179748, "z_s": 1.6612290811776649, "H0": 73.54527622169407}
-real_cluster = 1
 # Calculate the image positions and time delays for the test parameters
 output = cluster_system.calculate_images_and_delays(
     real_params, real_cluster
 )
-print(f'True time delays: {output['time_delays']}')
+
+print(f"True time delays: {output['time_delays']}")
 dt_true = output['time_delays']
 
 # luminosity distance calculation
 cosmos = FlatLambdaCDM(H0=real_params['H0'], Om0=0.3)
 lum_dist_true = cosmos.luminosity_distance(real_params['z_s']).value  # Luminosity distance in Mpc
 print("True luminosity distances:", lum_dist_true)
-
-# Define the output directory for results
-base_output_dir = pathlib.Path("/home/dices/Research/GWlensing_Brian/oddratio")
-base_output_dir.mkdir(exist_ok=True)  # Ensure the parent directory exists
-max_n = 0
-for path in base_output_dir.glob('test_tidy_*'):
-    if path.is_dir():
-        # Extract the number from the directory name 'test_tidy_n'
-        n = int(path.name.split('_')[-1])
-        if n > max_n:
-            max_n = n
-
-# Create the new directory with n+1
-new_dir_name = f"test_tidy_{max_n + 1}"
-OUT_DIR = base_output_dir / new_dir_name
-OUT_DIR.mkdir(exist_ok=True)
 
 # test de then mcmc 
 print("\nRunning the full analysis pipeline...")
@@ -142,137 +151,117 @@ mcmc_results, accepted_cluster_indices = cluster_system.find_best_fit(
     mcmc_settings=mcmc_settings
 )
 print(f"\nAnalysis complete. Found {len(mcmc_results)} cluster(s) meeting the MCMC criterion.")
+print(f"Accepted cluster indices: {accepted_cluster_indices}")
+
+# collect rows (one per cluster) and write a combined CSV for this source row
+combined_rows = []
 
 for result in mcmc_results:
-        cluster_idx = result['cluster_index']
-        print(f"\n--- Processing Final Results for Cluster {cluster_idx} ---")
-        
-        # --- Step 5: Analyze and Display ---
-        sampler = result['mcmc_sampler']
-        burn_in_steps = 3000
-        labels = list(result['de_params'].keys())
-        flat_samples = sampler.get_chain(discard=burn_in_steps, flat=True)
-        
-        print(f"--- MCMC Parameter Constraints for Cluster {cluster_idx} ---")
-        for i in range(len(labels)):
-            mcmc = np.percentile(flat_samples[:, i], [9, 50, 95]) # get the 90% interval by flat_samples
-            q = np.diff(mcmc)
-            print(f"{labels[i]:>7s} = {mcmc[1]:.3f} +{q[1]:.3f} / -{q[0]:.3f}")
-
-        # --- Step 6: Save the Localization Results ---
-        print(f"Saving localization results for Cluster {cluster_idx}...")
-        file_path = os.path.join(OUT_DIR, f"cluster_{cluster_idx}_posterior.npz")
-        
-        cluster_system.save_mcmc_results(
-            sampler=sampler,    
-            best_result=result, # Pass the individual result dictionary
-            n_burn_in=burn_in_steps,
-            output_path=file_path,
-            dt_true=dt_true,
-            mcmc_settings=mcmc_settings
-        )
-
-        # save the best-fit parameters to a CSV file
-        output_csv_path = os.path.join(base_output_dir, f"src_pos_tidy.csv")
-        # Load the existing CSV file
-        src = pd.read_csv(output_csv_path)
-        # Extract the best-fit parameters from the flat samples
-        results = []
-        for i in range(len(labels)):
-            mcmc_sol = np.percentile(flat_samples[:, i], 50)
-            results.append(mcmc_sol)
-        # Append the results to the DataFrame
-        new_line = src.loc[src['localized_index'].isna()].index[0]
-        src.at[new_line, 'localized_index'] = cluster_idx
-        src.at[new_line, 'localized_x'] = results[0]
-        src.at[new_line, 'localized_y'] = results[1]
-        src.at[new_line, 'localized_z'] = results[2]
-        src.at[new_line, 'localized_H0'] = results[3]
-        # Save the updated DataFrame back to the CSV file
-        src.to_csv(output_csv_path, index=False)
-        print(f"Localization results saved to {output_csv_path}")
-
-
-RESULTS_DIR = OUT_DIR
-# Specify the index of the cluster you want to plot
-CLUSTER_INDEX_TO_PLOT = real_cluster
-
-# Construct the full path to the data file
-data_file = os.path.join(RESULTS_DIR, f"cluster_{CLUSTER_INDEX_TO_PLOT}_posterior.npz")
-
-# --- Step 1: Load the Saved Data ---
-# Check if the file exists before trying to load it.
-if not os.path.exists(data_file):
-    print(f"Error: Data file not found at '{data_file}'")
-    print("Please make sure you have run the main analysis script first.")
-else:
-    print(f"Loading data from {data_file}...")
-    # np.load returns a dictionary-like object
-    mcmc_data = np.load(data_file)
+    cluster_idx = result['cluster_index']
+    print(f"\n--- Processing Final Results for Cluster {cluster_idx} ---")
     
-
-    # You can see what's inside the file by printing the keys
-    print("Available data keys:", list(mcmc_data.keys()))
-
-    # Extract the necessary arrays from the loaded data
-    flat_chain = mcmc_data['flat_chain'] # The 90%/95% interval can be obtained from here (flat_samples)
-    full_chain = mcmc_data['chain']
-    param_labels = mcmc_data['param_labels']
-    truth_values = real_params['x_src'], real_params['y_src'], real_params['z_s'], real_params['H0']
-
-    # --- Step 2: Create the Corner Plot ---
-    # The corner plot is the best way to visualize the posterior distributions
-    # and the correlations between parameters.
-
-    print("\nGenerating corner plot...")
+    # --- Step 5: Analyze and Display ---
+    sampler = result['mcmc_sampler']
+    burn_in_steps = 3000
+    labels = list(result['de_params'].keys())
+    flat_samples = sampler.get_chain(discard=burn_in_steps, flat=True)
     
-    # The corner.corner function takes the flattened (2D) chain of samples
-    # and the labels for each parameter.
-    fig_corner = corner.corner(
-        flat_chain,
-        labels=param_labels,
-        quantiles=[0.05, 0.5, 0.95], # 90% intervals
-        show_titles=True,
-        truths=truth_values,  # If you have true values to plot
-        label_kwargs={"fontsize": 14},  # Set axis label font size
-        title_kwargs={"fontsize": 12},  # Set title font size
-        verbose=False
+    print(f"--- MCMC Parameter Constraints for Cluster {cluster_idx} ---")
+    medians = []
+    for i in range(len(labels)):
+        mcmc = np.percentile(flat_samples[:, i], [9, 50, 95]) # get the 90% interval by flat_samples
+        q = np.diff(mcmc)
+        print(f"{labels[i]:>7s} = {mcmc[1]:.3f} +{q[1]:.3f} / -{q[0]:.3f}")
+        medians.append(float(np.percentile(flat_samples[:, i], 50)))
+
+    # Save the Localization Results 
+    print(f"Saving localization results for Cluster {cluster_idx}...")
+    file_path = os.path.join(OUT_DIR, f"cluster_{cluster_idx}_posterior.npz")
+    
+    cluster_system.save_mcmc_results(
+        sampler=sampler,    
+        best_result=result, # Pass the individual result dictionary
+        n_burn_in=burn_in_steps,
+        output_path=file_path,
+        dt_true=dt_true,
+        mcmc_settings=mcmc_settings
     )
+write_zero = len(mcmc_results) != 1
 
-    fig_corner.suptitle(f"Corner Plot for Cluster {CLUSTER_INDEX_TO_PLOT}", fontsize=16)
-    
-    # Save the corner plot to a file
-    corner_plot_path = os.path.join(RESULTS_DIR, f"cluster_{CLUSTER_INDEX_TO_PLOT}_corner_from_saved.png")
-    fig_corner.savefig(corner_plot_path)
-    print(f"-> Corner plot saved to {corner_plot_path}")
-    
+if not write_zero:
+    updates = {
+        "localized_index": cluster_idx,
+        "localized_x": medians[0],
+        "localized_y": medians[1],
+        "localized_z": medians[2],
+        "localized_H0": medians[3],
+    }
+    update_csv_row(csv_path, args.row, updates)
+    print(f"Updated CSV row {args.row} with result for cluster {cluster_idx}.")
+else:
+    updates = {
+        "localized_index": 0,
+        "localized_x": 0.0,
+        "localized_y": 0.0,
+        "localized_z": 0.0,
+        "localized_H0": 0.0,
+    }
+    update_csv_row(csv_path, args.row, updates)
+    print(f"Updated CSV row {args.row} with zeros (len(mcmc_results)={len(mcmc_results)}).")
 
-    # --- Step 3: Create the Trace Plot ---
-    # A trace plot (or "time series plot") shows the value of each parameter at each
-    # step of the MCMC chain for every walker. It is essential for diagnosing
-    # convergence. You are looking for a stationary, "fuzzy caterpillar" look,
-    # which indicates the walkers are well-mixed and exploring the same parameter space.
 
-    print("\nGenerating trace plot...")
-    
-    n_steps, n_walkers, n_dim = full_chain.shape
-    fig_trace, axes = plt.subplots(n_dim, figsize=(12, 2 * n_dim), sharex=True)
-    steps = np.arange(n_steps)
 
-    for i in range(n_dim):
-        ax = axes[i]
-        # The key command: This plots each of the n_walkers' paths as a separate line.
-        ax.plot(steps, full_chain[:, :, i], alpha=0.2)
-        ax.set_ylabel(param_labels[i], fontsize=14)
-        ax.tick_params(axis='both', labelsize=12)
+should_plot = (
+    len(accepted_cluster_indices) == 1
+    and accepted_cluster_indices[0] == real_cluster
+)
 
-    axes[-1].set_xlabel("Step Number", fontsize = 14)
-    axes[-1].tick_params(axis='both', labelsize=12)
-    fig_trace.suptitle(f"Trace Plot for MCMC parameters", fontsize=16, y=0.99)
-    fig_trace.tight_layout(rect=[0, 0, 1, 0.98])
+if should_plot:
+    CLUSTER_INDEX_TO_PLOT = real_cluster
+    data_file = os.path.join(OUT_DIR, f"cluster_{CLUSTER_INDEX_TO_PLOT}_posterior.npz")
+    if not os.path.exists(data_file):
+        print(f"Plot skipped: posterior file not found for cluster {CLUSTER_INDEX_TO_PLOT} at {data_file}")
+    else:
+        print(f"Loading data from {data_file}...")
+        mcmc_data = np.load(data_file)
+        flat_chain = mcmc_data['flat_chain']
+        full_chain = mcmc_data['chain']
+        param_labels = mcmc_data['param_labels']
+        truth_values = real_params['x_src'], real_params['y_src'], real_params['z_s'], real_params['H0']
 
-    trace_plot_path = os.path.join(RESULTS_DIR, f"cluster_{CLUSTER_INDEX_TO_PLOT}_trace.png")
-    fig_trace.savefig(trace_plot_path)
-    print(f"-> Trace plot saved to {trace_plot_path}")
+        print("\nGenerating corner plot...")
+        fig_corner = corner.corner(
+            flat_chain,
+            labels=param_labels,
+            quantiles=[0.05, 0.5, 0.95],
+            show_titles=True,
+            truths=truth_values,
+            label_kwargs={"fontsize": 14},
+            title_kwargs={"fontsize": 12},
+            verbose=False
+        )
+        fig_corner.suptitle(f"Corner Plot for Cluster {CLUSTER_INDEX_TO_PLOT}", fontsize=16)
+        corner_plot_path = os.path.join(OUT_DIR, f"cluster_{CLUSTER_INDEX_TO_PLOT}_corner_from_saved.png")
+        fig_corner.savefig(corner_plot_path, dpi=150)
+        plt.close(fig_corner)
+        print(f"-> Corner plot saved to {corner_plot_path}")
 
-    plt.show()
+        print("\nGenerating trace plot...")
+        n_steps, n_walkers, n_dim = full_chain.shape
+        fig_trace, axes = plt.subplots(n_dim, figsize=(12, 2 * n_dim), sharex=True)
+        steps = np.arange(n_steps)
+        for i in range(n_dim):
+            ax = axes[i]
+            ax.plot(steps, full_chain[:, :, i], alpha=0.2)
+            ax.set_ylabel(param_labels[i], fontsize=14)
+            ax.tick_params(axis='both', labelsize=12)
+        axes[-1].set_xlabel("Step Number", fontsize=14)
+        axes[-1].tick_params(axis='both', labelsize=12)
+        fig_trace.suptitle("Trace Plot for MCMC parameters", fontsize=16, y=0.99)
+        fig_trace.tight_layout(rect=[0, 0, 1, 0.98])
+        trace_plot_path = os.path.join(OUT_DIR, f"cluster_{CLUSTER_INDEX_TO_PLOT}_trace.png")
+        fig_trace.savefig(trace_plot_path, dpi=150)
+        plt.close(fig_trace)
+        print(f"-> Trace plot saved to {trace_plot_path}")
+else:
+    print("Plotting skipped: require len(mcmc_results)==1 and accepted_cluster_indices==real_cluster.")
