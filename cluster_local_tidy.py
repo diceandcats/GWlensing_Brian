@@ -192,6 +192,11 @@ class ClusterLensing(ClusterLensingUtils):
             time_delays = np.array([])
         else:
             # Calculate arrival times for the found images
+            # print the image positions and the lens potential for each image positions
+            for i in range(len(x_img)):
+                lens_potential = kwargs['f_'][int(y_img[i]/self.data.pixscale[cluster_index]), int(x_img[i]/self.data.pixscale[cluster_index])]
+                #print(f"Image {i}: Position=({x_img[i]}, {y_img[i]}), Lens Potential={lens_potential}")
+
             arrival_times = lens_model.arrival_time(x_img, y_img, [kwargs], x_source=x_src, y_source=y_src)
             time_delays = arrival_times - np.min(arrival_times)
         
