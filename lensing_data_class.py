@@ -33,7 +33,7 @@ class LensingData:
     z_l_list: List[float]
     
     # Default cluster-specific parameters from the original code
-    x_center: List[float] = field(default_factory=lambda: [99, 132, 131, 109, 125, 107.1])
-    y_center: List[float] = field(default_factory=lambda: [95, 100, 131, 111, 112, 113.1])
+    x_center: List[float] = field(default_factory=lambda: [300, 132, 131, 109, 125, 107.1])
+    y_center: List[float] = field(default_factory=lambda: [325, 100, 131, 111, 112, 113.1])
     search_window_list: List[float] = field(default_factory=lambda: [100, 95, 95, 100, 120, 100])
     uncertainty_alpha: List[float] = field(default_factory=lambda: [0.043573, 0.086522, 0.068417, 0.061110, 0.021551, 0.084857])

@@ -128,7 +128,7 @@ class ClusterLensingUtils:
         scaled_kwargs = {
             'grid_interp_x': x_grid,
             'grid_interp_y': x_grid,
-            'f_': self.lens_potential_maps_orig[index] * scale * pix**2,
+            'f_': self.lens_potential_maps_orig[index] * scale,
             'f_x': self.alpha_maps_x_orig[index] * scale,
             'f_y': self.alpha_maps_y_orig[index] * scale
         }
@@ -193,9 +193,9 @@ class ClusterLensing(ClusterLensingUtils):
         else:
             # Calculate arrival times for the found images
             # print the image positions and the lens potential for each image positions
-            for i in range(len(x_img)):
-                lens_potential = kwargs['f_'][int(y_img[i]/self.data.pixscale[cluster_index]), int(x_img[i]/self.data.pixscale[cluster_index])]
-                #print(f"Image {i}: Position=({x_img[i]}, {y_img[i]}), Lens Potential={lens_potential}")
+            # for i in range(len(x_img)):
+            #     lens_potential = kwargs['f_'][int(y_img[i]), int(x_img[i])]
+            #     print(f"Image {i}: Position=({x_img[i]}, {y_img[i]}), Lens Potential={lens_potential}")
 
             arrival_times = lens_model.arrival_time(x_img, y_img, [kwargs], x_source=x_src, y_source=y_src)
             time_delays = arrival_times - np.min(arrival_times)
@@ -546,5 +546,6 @@ class ClusterLensing(ClusterLensingUtils):
                 y_srcs = np.append(y_srcs, y_src)
                 z_ss = np.append(z_ss, z_s)
                 H0s = np.append(H0s, H0)
+                print(x_src, y_src, z_s, H0)
 
         return index, x_srcs, y_srcs, z_ss, H0s
