@@ -206,7 +206,7 @@ class ClusterLensing(ClusterLensingUtils):
                              params: Dict[str, float],
                              dt_true: np.ndarray,
                              index: int,
-                             sigma_dt: float = 0.05,
+                             sigma_dt: Optional[float] = None,
                              sigma_lum: Optional[float] = None,
                              lum_dist_true: Optional[float] = None) -> float:
         """

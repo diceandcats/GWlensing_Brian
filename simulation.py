@@ -136,7 +136,7 @@ mcmc_settings = {
     "fit_z": True,        # We want to fit for the source redshift (z_s)
     "fit_hubble": True,   # We want to fit for the Hubble constant (H0)
     "lum_dist_true": lum_dist_true, # An external "true" luminosity distance measurement (in Mpc)
-    "sigma_lum": 0.05,     # The fractional error on the luminosity distance
+    "sigma_lum": 0.1,     # The fractional error on the luminosity distance
     # Define the prior boundaries for the parameters being fit in the MCMC
     "z_bounds": (1.0, 5.0),
     "H0_bounds": (50, 100)
