@@ -1,0 +1,4 @@
+[ZoneTransfer]
+ZoneId=3
+ReferrerUrl=https://archive.stsci.edu/cgi-bin/hla/display?image=/pub/hlsp/frontier/macs0416/models/cats/v4/hlsp_frontier_model_macs0416_cats_v4_z04-magnif.fits&autoscale=99.9&title=z04-magnif
+HostUrl=https://archive.stsci.edu/cgi-bin/hla/fitscut.cgi?red=%2Fpub%2Fhlsp%2Ffrontier%2Fmacs0416%2Fmodels%2Fcats%2Fv4%2Fhlsp_frontier_model_macs0416_cats_v4_z04-magnif.fits&maxzoom=2&usermin=0.013626846484839916&usermax=376.93898396471263&tile=&download=1&format=jpg&x=-130&y=243&corner=1&size=1262,516&zoom=1

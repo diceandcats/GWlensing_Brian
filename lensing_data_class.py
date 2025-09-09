@@ -25,6 +25,8 @@ class LensingData:
         List of y-coordinates for the center of the search window for each cluster.
     search_window_list : List[float]
         List of search window sizes for each cluster.
+    uncertainty_alpha : List[np.ndarray]
+        List of time delay uncertainty maps for each cluster.
     """
     alpha_maps_x: List[np.ndarray]
     alpha_maps_y: List[np.ndarray]
@@ -36,4 +38,4 @@ class LensingData:
     x_center: List[float] = field(default_factory=lambda: [300, 132, 131, 109, 125, 107.1])
     y_center: List[float] = field(default_factory=lambda: [325, 100, 131, 111, 112, 113.1])
     search_window_list: List[float] = field(default_factory=lambda: [100, 95, 95, 100, 120, 100])
-    uncertainty_alpha: List[float] = field(default_factory=lambda: [0.043573, 0.086522, 0.068417, 0.061110, 0.021551, 0.084857])
+    uncertainty_dt: List[np.ndarray]

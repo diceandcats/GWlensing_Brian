@@ -242,8 +242,17 @@ class ClusterLensing(ClusterLensingUtils):
         
         mask = np.array(dt_true) != 0
         
-        # Get the uncertainty for the specific cluster
-        sigma_dt = self.data.uncertainty_alpha[index]
+        # Get the relative uncertainty for the specific cluster
+        sigma_dt = self.data.uncertainty_dt[index]
+
+        # Scale the relative uncertainty by D_dt
+        # D_dt = (1 + z_l) * D_L * D_S / D_LS
+
+        # Getting the value of relative uncertainty for each time delay by their image positions
+
+
+
+        # 
         sigma_arr = sigma_dt * np.array(dt_true)
         chi_sq_dt = np.sum((dt_candidate[mask] - dt_true[mask])**2 / sigma_arr[mask]**2)
         
