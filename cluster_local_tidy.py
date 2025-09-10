@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple, Dict, Any
 
 # Assuming lensing_data.py is in the same directory or accessible
 from lensing_data_class import LensingData
+from scipy.interpolate import interpn
 
 # --- Global Function for MCMC Parallelization ---
 
@@ -202,6 +203,51 @@ class ClusterLensing(ClusterLensingUtils):
         
         return {'image_positions': (x_img, y_img), 'time_delays': np.sort(time_delays)}
 
+    def calculate_time_delay_uncertainty(self, img: np.ndarray, index: int) -> np.ndarray:
+        """
+        Calculate the time delay uncertainty for each image based on its position.
+        
+        Args:
+        ----
+        img : np.ndarray
+            Array of image positions in [x,y].
+        index : int
+            Index of the cluster model to use for the calculation.
+
+        Returns:
+        -------
+        np.ndarray
+            Array of time delay uncertainties corresponding to each image.
+        """
+
+        # Get the relative uncertainty for the specific cluster
+        sigma_dt = self.data.uncertainty_dt[index]
+
+        # The uncertainty map is a 2D grid. Image positions are floats.
+        # We need to interpolate the uncertainty value at the precise image locations.
+
+        # The grid coordinates for the uncertainty map (e.g., 0, 1, 2, ..., N-1)
+        map_size = sigma_dt.shape[0]
+        points = (np.arange(map_size), np.arange(map_size))
+        
+        # The image positions where we want to interpolate.
+        # Note: interpn expects points in (y, x) order for a 2D array.
+        # img[0] is x_img, img[1] is y_img. We stack them as (y, x) pairs.
+        xi = np.vstack((img[1], img[0])).T
+
+        # Perform bilinear interpolation.
+        # bounds_error=False and fill_value=None will use the nearest value for points outside the grid.
+        sigma_dt_values = interpn(
+            points, 
+            sigma_dt, 
+            xi, 
+            method='linear', 
+            bounds_error=False, 
+            fill_value=None
+        )
+
+        return np.array(sigma_dt_values)
+
     def _calculate_chi_squared(self,
                              params: Dict[str, float],
                              dt_true: np.ndarray,
@@ -242,18 +288,12 @@ class ClusterLensing(ClusterLensingUtils):
         
         mask = np.array(dt_true) != 0
         
-        # Get the relative uncertainty for the specific cluster
-        sigma_dt = self.data.uncertainty_dt[index]
-
-        # Scale the relative uncertainty by D_dt
-        # D_dt = (1 + z_l) * D_L * D_S / D_LS
 
         # Getting the value of relative uncertainty for each time delay by their image positions
+        sigma_dt_pixel = self.calculate_time_delay_uncertainty([x_img, y_img], index)
 
-
-
-        # 
-        sigma_arr = sigma_dt * np.array(dt_true)
+        # scale the time delay uncertainty by the true time delays
+        sigma_arr = sigma_dt_pixel * np.array(dt_true)
         chi_sq_dt = np.sum((dt_candidate[mask] - dt_true[mask])**2 / sigma_arr[mask]**2)
         
         # 4. Add luminosity distance chi-squared if applicable
