@@ -18,7 +18,6 @@ def _log_posterior_func(params: np.ndarray,
                         dt_true: np.ndarray,
                         index: int,
                         bounds: Dict[str, Tuple[float, float]],
-                        sigma_dt: float,
                         sigma_lum: Optional[float],
                         lum_dist_true: Optional[float]) -> float:
     """
@@ -43,7 +42,7 @@ def _log_posterior_func(params: np.ndarray,
 
     # 2) Log-likelihood = -0.5 * chi^2
     chi_sq = self_obj._calculate_chi_squared(
-        param_map, dt_true, index, sigma_dt, sigma_lum, lum_dist_true
+        param_map, dt_true, index, sigma_lum, lum_dist_true
     )
     
     return -0.5 * chi_sq
@@ -240,10 +239,9 @@ class ClusterLensing(ClusterLensingUtils):
         sigma_dt_values = interpn(
             points, 
             sigma_dt, 
-            xi, 
+            xi,
             method='linear', 
-            bounds_error=False, 
-            fill_value=None
+            bounds_error=True
         )
 
         return np.array(sigma_dt_values)
@@ -252,7 +250,6 @@ class ClusterLensing(ClusterLensingUtils):
                              params: Dict[str, float],
                              dt_true: np.ndarray,
                              index: int,
-                             sigma_dt: Optional[float] = None,
                              sigma_lum: Optional[float] = None,
                              lum_dist_true: Optional[float] = None) -> float:
         """
@@ -379,7 +376,6 @@ class ClusterLensing(ClusterLensingUtils):
         """
         n_walkers = mcmc_settings.get("n_walkers", 32)
         n_steps = mcmc_settings.get("n_steps", 1000)
-        sigma_dt = mcmc_settings.get("sigma_dt", 0.05)
         sigma_lum = mcmc_settings.get("sigma_lum", 0.05)
         lum_dist_true = mcmc_settings.get("lum_dist_true")
 
@@ -428,7 +424,7 @@ class ClusterLensing(ClusterLensingUtils):
         # Set up and run the sampler
         sampler = emcee.EnsembleSampler(
             n_walkers, ndim, _log_posterior_func,
-            args=[self, dt_true, index, bounds, sigma_dt, sigma_lum, lum_dist_true]
+            args=[self, dt_true, index, bounds, sigma_lum, lum_dist_true]
         )
         # The progress bar will appear now
         sampler.run_mcmc(p0, n_steps, progress=True)
@@ -531,7 +527,6 @@ class ClusterLensing(ClusterLensingUtils):
             params=median_params,
             dt_true=dt_true,
             index=best_result['cluster_index'],
-            sigma_dt=mcmc_settings.get("sigma_dt", 0.05),
             sigma_lum=mcmc_settings.get("sigma_lum"),
             lum_dist_true=mcmc_settings.get("lum_dist_true")
         )

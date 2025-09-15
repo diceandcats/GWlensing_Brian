@@ -33,9 +33,9 @@ class LensingData:
     lens_potential_maps: List[np.ndarray]
     pixscale: List[float]
     z_l_list: List[float]
+    uncertainty_dt: List[np.ndarray]
     
     # Default cluster-specific parameters from the original code
     x_center: List[float] = field(default_factory=lambda: [300, 132, 131, 109, 125, 107.1])
     y_center: List[float] = field(default_factory=lambda: [325, 100, 131, 111, 112, 113.1])
     search_window_list: List[float] = field(default_factory=lambda: [100, 95, 95, 100, 120, 100])
-    uncertainty_dt: List[np.ndarray]
