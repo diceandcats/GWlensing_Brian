@@ -15,6 +15,8 @@ class LensingData:
         List of deflection maps in the y-direction for each cluster (arcsec).
     lens_potential_maps : List[np.ndarray]
         List of lens potential maps for each cluster (arcsec^2).
+    uncertainty_dt : List[np.ndarray]
+        List of uncertainty maps for the time delay for each cluster (percentage).
     pixscale : List[float]
         List of pixel scales for each cluster's maps.
     z_l_list : List[float]
@@ -25,17 +27,15 @@ class LensingData:
         List of y-coordinates for the center of the search window for each cluster.
     search_window_list : List[float]
         List of search window sizes for each cluster.
-    uncertainty_alpha : List[np.ndarray]
-        List of time delay uncertainty maps for each cluster.
     """
     alpha_maps_x: List[np.ndarray]
     alpha_maps_y: List[np.ndarray]
     lens_potential_maps: List[np.ndarray]
+    uncertainty_dt: List[np.ndarray]
     pixscale: List[float]
     z_l_list: List[float]
-    uncertainty_dt: List[np.ndarray]
     
     # Default cluster-specific parameters from the original code
-    x_center: List[float] = field(default_factory=lambda: [300, 132, 131, 109, 125, 107.1])
-    y_center: List[float] = field(default_factory=lambda: [325, 100, 131, 111, 112, 113.1])
-    search_window_list: List[float] = field(default_factory=lambda: [100, 95, 95, 100, 120, 100])
+    x_center: List[float] = field(default_factory=lambda: [300, 132, 131, 109, 125, 107.1]) # in arcsec
+    y_center: List[float] = field(default_factory=lambda: [325, 100, 131, 111, 112, 113.1]) # in arcsec
+    search_window_list: List[float] = field(default_factory=lambda: [100, 95, 95, 100, 120, 100]) # in arcsec

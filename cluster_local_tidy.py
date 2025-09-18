@@ -185,7 +185,6 @@ class ClusterLensing(ClusterLensingUtils):
             search_window=self.data.search_window_list[cluster_index],
             x_center=self.data.x_center[cluster_index],
             y_center=self.data.y_center[cluster_index]
-            
         )
         
         if len(x_img) == 0:
