@@ -36,6 +36,6 @@ class LensingData:
     z_l_list: List[float]
     
     # Default cluster-specific parameters from the original code
-    x_center: List[float] = field(default_factory=lambda: [300, 132, 131, 109, 125, 107.1]) # in arcsec
-    y_center: List[float] = field(default_factory=lambda: [325, 100, 131, 111, 112, 113.1]) # in arcsec
-    search_window_list: List[float] = field(default_factory=lambda: [100, 95, 95, 100, 120, 100]) # in arcsec
+    x_center: List[float] = field(default_factory=lambda: [77, 175, 100, 120, 250, 150]) # in arcsec
+    y_center: List[float] = field(default_factory=lambda: [79, 180, 100, 120, 240, 150]) # in arcsec
+    search_window_list: List[float] = field(default_factory=lambda: [90, 120, 100, 100, 150, 100]) # in arcsec

@@ -31,6 +31,8 @@ args = parser.parse_args()
 csv_path = pathlib.Path(args.csv).resolve()
 df = pd.read_csv(csv_path)
 row = df.iloc[args.row]
+# the code to run this script is:
+# python simulation.py --csv oddratio/src_pos_tidy_v2.csv --row 0
 
 # real image pos and dt according to the row specified
 real_params = {
@@ -69,6 +71,7 @@ full_cluster_names = {
 datax_list = []
 datay_list = []
 data_psi_list = []
+data_sigma_dt_list = []
 
 for i in scenarios:
     clustername = scenarios[i]
@@ -77,35 +80,45 @@ for i in scenarios:
     file_dir = os.getcwd()
     fits_filex = os.path.join(
         file_dir,
-        f'Research/GWlensing_Brian/GCdata/{full_cluster_name}/diego/hlsp_frontier_model_{clustername}_diego_v4.1_x-arcsec-deflect.fits'
+        f'GCdata/{full_cluster_name}/cats copy/hlsp_frontier_model_{clustername}_cats_v4_x-arcsec-deflect.fits'
     )
     fits_filey = os.path.join(
         file_dir,
-        f'Research/GWlensing_Brian/GCdata/{full_cluster_name}/diego/hlsp_frontier_model_{clustername}_diego_v4.1_y-arcsec-deflect.fits'
+        f'GCdata/{full_cluster_name}/cats copy/hlsp_frontier_model_{clustername}_cats_v4_y-arcsec-deflect.fits'
     )
     psi_file = os.path.join(
         file_dir,
-        f'Research/GWlensing_Brian/GCdata/{full_cluster_name}/diego/hlsp_frontier_model_{clustername}_diego_v4.1_psi.fits'
+        f'GCdata/{full_cluster_name}/cats copy/hlsp_frontier_model_{clustername}_cats_v4_psi.fits'
     )
 
-    with fits.open(fits_filex) as hdulx, fits.open(fits_filey) as hduly, fits.open(psi_file) as hdul_psi:
-        datax = hdulx[0].data
-        datay = hduly[0].data
-        data_psi = hdul_psi[0].data
+    sigma_dt_file = os.path.join(
+        file_dir,
+        f'GCdata/{full_cluster_name}/cats copy/hlsp_frontier_model_{clustername}_cats_v4_sigma_dt.fits'
+    )
 
+    with fits.open(fits_filex) as hdulx, fits.open(fits_filey) as hduly, fits.open(psi_file) as hdul_psi, fits.open(sigma_dt_file) as hdul_sigma_dt:
+        datax = hdulx[0].data.astype(np.float32, copy=False)
+        datay = hduly[0].data.astype(np.float32, copy=False)
+        data_psi = hdul_psi[0].data.astype(np.float32, copy=False)
+        data_sigma_dt = hdul_sigma_dt[0].data.astype(np.float32, copy=False)
+        
         # Append the data arrays to the lists
         datax_list.append(datax)
         datay_list.append(datay)
         data_psi_list.append(data_psi)
+        data_sigma_dt_list.append(data_sigma_dt)
 
 # initialize the LensingData object
-pixscale_list = [0.42, 0.51, 0.51, 0.42, 0.42, 0.42]
+pixscale_list = [0.2, 0.3, 0.2, 0.3, 0.8, 0.5]
 lensing_data = LensingData(
     alpha_maps_x=datax_list,
     alpha_maps_y=datay_list,
     lens_potential_maps=data_psi_list,
+    uncertainty_dt=data_sigma_dt_list,
     pixscale = pixscale_list,
-    z_l_list = [0.375, 0.308, 0.351, 0.397, 0.545, 0.543],
+    z_l_list = [0.375, 0.308, 0.351, 0.397, 0.545, 0.543], # Lens redshifts for the two clusters
+    # We can use the default x_center, y_center, and search_window_list
+    # or override them if needed.
 )
 
 #Initialize the Main Analysis Class
@@ -138,8 +151,8 @@ mcmc_settings = {
     "lum_dist_true": lum_dist_true, # An external "true" luminosity distance measurement (in Mpc)
     "sigma_lum": 0.1,     # The fractional error on the luminosity distance
     # Define the prior boundaries for the parameters being fit in the MCMC
-    "z_bounds": (1.0, 5.0),
-    "H0_bounds": (50, 100)
+    "z_bounds": (1.0, 4.0),
+    "H0_bounds": (60, 80)
 }
 
 # Call the main analysis function
