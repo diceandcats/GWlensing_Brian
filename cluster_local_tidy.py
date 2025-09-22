@@ -2,6 +2,12 @@
 # ===========================
 # cluster_local_tidy.py (patched)
 # ===========================
+import os
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 import numpy as np
 from scipy.optimize import differential_evolution
@@ -17,7 +23,7 @@ from scipy.interpolate import interpn
 
 # [MODIFIED] new imports for memory-safe parallelism
 from concurrent.futures import ThreadPoolExecutor
-import os
+
 import threading
 
 
@@ -56,6 +62,7 @@ def _log_posterior_func(params: np.ndarray,
     )
     
     return -0.5 * chi_sq
+
 
 def _de_objective_func(params: np.ndarray,
                        self_obj: 'ClusterLensing',
@@ -315,7 +322,12 @@ class ClusterLensing(ClusterLensingUtils):
             default_settings['callback'] = callback_fn
 
         # [MODIFIED] Use threads so memory is shared across workers
-        n_threads = os.cpu_count()/2  # tune as desired
+        try:
+            n_threads = len(os.sched_getaffinity(0))
+            print(f"Using {n_threads} threads for DE optimization.")
+        except AttributeError:
+            n_threads = os.cpu_count()/2
+
         with ThreadPoolExecutor(max_workers=n_threads) as pool:
             result = differential_evolution(
                 _de_objective_func, 
