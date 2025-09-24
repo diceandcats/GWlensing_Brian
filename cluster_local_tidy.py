@@ -1,7 +1,5 @@
 # pylint: skip-file
-# ===========================
-# cluster_local_tidy.py (patched)
-# ===========================
+# ========================= cluster_local_tidy.py (with MOD 1, MOD 2, and pickling FIX) =========================
 import os
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
@@ -17,68 +15,112 @@ from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 import emcee
 from typing import List, Optional, Tuple, Dict, Any
 
-# Assuming lensing_data.py is in the same directory or accessible
 from lensing_data_class import LensingData
 from scipy.interpolate import interpn
 
-# [MODIFIED] new imports for memory-safe parallelism
-from concurrent.futures import ThreadPoolExecutor
+# ---------------------------------------------------------------------------------------------
+# [MOD 1] process-based parallelism imports (no threads for DE)
+# ---------------------------------------------------------------------------------------------
+import multiprocessing as mp
+from sys import platform
 
 import threading
 
 
-# --- Global Function for MCMC Parallelization ---
+# =============================================================================================
+# [FIX] GLOBAL CONTEXT FOR DE to avoid pickling 'self' (which holds a threading.local)
+# =============================================================================================
+_DE_SELF = None
+_DE_BOUNDS_KEYS = None
+_DE_DT_TRUE = None
+_DE_INDEX = None
+_DE_SIGMA_LUM = None
+_DE_LUM_DIST_TRUE = None
 
-def _log_posterior_func(params: np.ndarray,
-                        self_obj: 'ClusterLensing',
-                        dt_true: np.ndarray,
-                        index: int,
-                        bounds: Dict[str, Tuple[float, float]],
-                        sigma_lum: Optional[float],
-                        lum_dist_true: Optional[float]) -> float:
-    """
-    Global (picklable) log-posterior function for emcee.
-    Handles priors and calls the main chi-squared calculation.
-    """
-    param_map = {"x_src": params[0], "y_src": params[1]}
-    fit_z = "z_s" in bounds
-    fit_hubble = "H0" in bounds
+def _set_de_context(self_obj, bounds_keys, dt_true, index, sigma_lum, lum_dist_true):
+    """Set module-level globals so workers don't need to pickle 'self'."""
+    global _DE_SELF, _DE_BOUNDS_KEYS, _DE_DT_TRUE, _DE_INDEX, _DE_SIGMA_LUM, _DE_LUM_DIST_TRUE
+    _DE_SELF = self_obj
+    _DE_BOUNDS_KEYS = list(bounds_keys)
+    _DE_DT_TRUE = np.asarray(dt_true)
+    _DE_INDEX = int(index)
+    _DE_SIGMA_LUM = sigma_lum
+    _DE_LUM_DIST_TRUE = lum_dist_true
 
-    if fit_z:
-        param_map["z_s"] = params[2]
-        if fit_hubble:
-            param_map["H0"] = params[3]
-    elif fit_hubble:
-        param_map["H0"] = params[2]
+# [FIX] Top-level, no-extra-args objective used by DE workers (picklable).
+def _de_objective_func_global(params: np.ndarray) -> float:
+    param_map = {key: val for key, val in zip(_DE_BOUNDS_KEYS, params)}
+    return _DE_SELF._calculate_chi_squared(
+        param_map, _DE_DT_TRUE, _DE_INDEX, sigma_lum=_DE_SIGMA_LUM, lum_dist_true=_DE_LUM_DIST_TRUE
+    )
 
-    # 1) Uniform prior checks
-    for i, key in enumerate(bounds.keys()):
-        if not (bounds[key][0] <= params[i] <= bounds[key][1]):
+# ===== MCMC global context (NEW) =====
+_MCMC_SELF = None
+_MCMC_KEYS = None          # e.g. ["x_src","y_src","z_s","H0"]
+_MCMC_BOUNDS = None        # np.array([[lo,hi],...])
+_MCMC_DT_TRUE = None
+_MCMC_INDEX = None
+_MCMC_SIGMA_LUM = None
+_MCMC_LUM_DIST_TRUE = None
+
+def _set_mcmc_context(self_obj, dt_true, index, bounds_dict, sigma_lum, lum_dist_true):
+    """Populate globals so the pool workers don't need to pickle 'self'."""
+    global _MCMC_SELF, _MCMC_KEYS, _MCMC_BOUNDS, _MCMC_DT_TRUE, _MCMC_INDEX, _MCMC_SIGMA_LUM, _MCMC_LUM_DIST_TRUE
+    _MCMC_SELF = self_obj
+    _MCMC_KEYS = list(bounds_dict.keys())  # preserves insertion order
+    _MCMC_BOUNDS = np.asarray([bounds_dict[k] for k in _MCMC_KEYS], dtype=float)
+    _MCMC_DT_TRUE = np.asarray(dt_true)
+    _MCMC_INDEX = int(index)
+    _MCMC_SIGMA_LUM = sigma_lum
+    _MCMC_LUM_DIST_TRUE = lum_dist_true
+
+def _log_posterior_global(theta: np.ndarray) -> float:
+    """Top-level, picklable log-prob using the global MCMC context."""
+    # uniform priors
+    for i, (lo, hi) in enumerate(_MCMC_BOUNDS):
+        ti = theta[i]
+        if (ti < lo) or (ti > hi):
             return -np.inf
 
-    # 2) Log-likelihood = -0.5 * chi^2
-    chi_sq = self_obj._calculate_chi_squared(
-        param_map, dt_true, index, sigma_lum, lum_dist_true
+    params = {k: v for k, v in zip(_MCMC_KEYS, theta)}
+    chi_sq = _MCMC_SELF._calculate_chi_squared(
+        params=params,
+        dt_true=_MCMC_DT_TRUE,
+        index=_MCMC_INDEX,
+        sigma_lum=_MCMC_SIGMA_LUM,
+        lum_dist_true=_MCMC_LUM_DIST_TRUE
     )
-    
     return -0.5 * chi_sq
 
+# --- Global Function for MCMC Parallelization (unchanged) ---
 
-def _de_objective_func(params: np.ndarray,
-                       self_obj: 'ClusterLensing',
-                       bounds_keys: List[str],
-                       dt_true: np.ndarray,
-                       index: int,
-                       sigma_lum: Optional[float],
-                       lum_dist_true: Optional[float]) -> float:
-    """
-    Global (picklable) objective function for differential_evolution.
-    This function can be sent to worker processes/threads.
-    """
-    param_map = {key: val for key, val in zip(bounds_keys, params)}
-    return self_obj._calculate_chi_squared(
-        param_map, dt_true, index, sigma_lum=sigma_lum, lum_dist_true=lum_dist_true
-    )
+# def _log_posterior_func(params: np.ndarray,
+#                         self_obj: 'ClusterLensing',
+#                         dt_true: np.ndarray,
+#                         index: int,
+#                         bounds: Dict[str, Tuple[float, float]],
+#                         sigma_lum: Optional[float],
+#                         lum_dist_true: Optional[float]) -> float:
+#     param_map = {"x_src": params[0], "y_src": params[1]}
+#     fit_z = "z_s" in bounds
+#     fit_hubble = "H0" in bounds
+
+#     if fit_z:
+#         param_map["z_s"] = params[2]
+#         if fit_hubble:
+#             param_map["H0"] = params[3]
+#     elif fit_hubble:
+#         param_map["H0"] = params[2]
+
+#     for i, key in enumerate(bounds.keys()):
+#         if not (bounds[key][0] <= params[i] <= bounds[key][1]):
+#             return -np.inf
+
+#     chi_sq = self_obj._calculate_chi_squared(
+#         param_map, dt_true, index, sigma_lum, lum_dist_true
+#     )
+#     return -0.5 * chi_sq
+
 
 # --- Utility Class ---
 
@@ -90,44 +132,45 @@ class ClusterLensingUtils:
         self.data = data
         self.z_s_ref = z_s_ref
         
-        # [MODIFIED] keep references instead of making copies (save RAM)
+        # keep references instead of making copies (save RAM)
         self.alpha_maps_x_orig = data.alpha_maps_x
         self.alpha_maps_y_orig = data.alpha_maps_y
         self.lens_potential_maps_orig = data.lens_potential_maps
         
         self.map_sizes = [len(m) for m in data.alpha_maps_x]
         
-        # Caching for cosmology objects to prevent re-creation
         self._cosmo_cache = {}
         self.base_cosmo = self._get_cosmology(cosmo_H0, cosmo_Om0)
 
-        # [MODIFIED] Precompute grids once; drop heavy ref_kwargs_list allocation
+        # Precompute grids once
         self._x_grids: List[np.ndarray] = []
         for i in range(len(data.z_l_list)):
             size = self.map_sizes[i]
-            pix = np.float32(data.pixscale[i])  # keep float32
-            # Use float32 grid to avoid upcasting
+            pix = np.float32(data.pixscale[i])
             x_grid = np.linspace(0, size - 1, size, dtype=np.float32) * pix
             self._x_grids.append(x_grid)
 
-        # [MODIFIED] set up per-thread buffers to hold scaled maps (avoid per-call big allocations)
-        self._tls = threading.local()  # thread-local storage
+        # per-thread buffers (harmless with processes too)
+        self._tls = threading.local()
 
-        # [UNCHANGED] If you still want reference LensModel/Solver for ref redshift you can keep them lightweight.
+        # -------------------------------------------------------------------------------------
+        # [MOD 2] Cache one LensModel + one Solver PER CLUSTER and REUSE them
+        # -------------------------------------------------------------------------------------
         self.ref_lens_models = []
         self.ref_solvers = []
         for i in range(len(data.z_l_list)):
-            lens_model = LensModel(lens_model_list=['INTERPOL'], z_source=z_s_ref, z_lens=data.z_l_list[i], cosmo=self.base_cosmo)
+            lens_model = LensModel(
+                lens_model_list=['INTERPOL'],
+                z_source=z_s_ref,                   # kwargs will carry the redshift scaling
+                z_lens=data.z_l_list[i],
+                cosmo=self.base_cosmo
+            )
             self.ref_lens_models.append(lens_model)
             self.ref_solvers.append(LensEquationSolver(lens_model))
 
     def _get_thread_buffers(self, index: int, shape: Tuple[int, int]) -> Dict[str, np.ndarray]:
-        """
-        [MODIFIED] Return per-thread scaling buffers for a given cluster index.
-        Creates them lazily the first time a thread needs them.
-        """
         if not hasattr(self._tls, "buffers"):
-            self._tls.buffers = [None] * len(self.data.z_l_list)  # one slot per cluster
+            self._tls.buffers = [None] * len(self.data.z_l_list)
         if self._tls.buffers[index] is None:
             self._tls.buffers[index] = {
                 'f_' : np.empty(shape, dtype=np.float32),
@@ -137,58 +180,47 @@ class ClusterLensingUtils:
         return self._tls.buffers[index]
 
     def _get_cosmology(self, H0: float, Om0: float = 0.3) -> FlatLambdaCDM:
-        """Returns a cached or new cosmology instance."""
         if H0 not in self._cosmo_cache:
             self._cosmo_cache[H0] = FlatLambdaCDM(H0=H0, Om0=Om0)
         return self._cosmo_cache[H0]
 
     def _get_scaled_model_and_kwargs(self, z_s: float, index: int, H0: float) -> Tuple[Optional[LensModel], Optional[Dict[str, Any]]]:
         """
-        Calculates the scaled lens model and kwargs for a given z_s and H0.
-        Returns (None, None) if scaling is not possible.
+        Compute the scaled deflection/potential maps for (z_s, H0) and
+        return the REUSED per-cluster LensModel + kwargs. Returns (None, None) if invalid.
         """
+        # keep per-H0 distances here to preserve original physics
         cosmo = self._get_cosmology(H0)
-        
         D_S = cosmo.angular_diameter_distance(z_s).value
         D_LS = cosmo.angular_diameter_distance_z1z2(self.data.z_l_list[index], z_s).value
-        
         if D_S == 0 or not np.isfinite(D_S) or not np.isfinite(D_LS):
             return None, None
-            
-        # [MODIFIED] keep as float32 to prevent upcasting and reduce memory traffic
-        scale = np.float32(D_LS / D_S)
-        pix = self.data.pixscale[index]
-        size = self.map_sizes[index]
-        x_grid = self._x_grids[index]
 
-        # [MODIFIED] reuse per-thread buffers; multiply in-place (no new big arrays)
+        scale = np.float32(D_LS / D_S)
+        x_grid = self._x_grids[index]
         shape = self.alpha_maps_x_orig[index].shape
+
         buf = self._get_thread_buffers(index, shape)
         np.multiply(self.lens_potential_maps_orig[index], scale, out=buf['f_'])
         np.multiply(self.alpha_maps_x_orig[index],        scale, out=buf['f_x'])
         np.multiply(self.alpha_maps_y_orig[index],        scale, out=buf['f_y'])
         
-        scaled_kwargs = {
+        kwargs = {
             'grid_interp_x': x_grid,
             'grid_interp_y': x_grid,
             'f_': buf['f_'],
             'f_x': buf['f_x'],
             'f_y': buf['f_y']
         }
-        
-        # Construct LensModel for this cosmology/z (Lenstronomy is light; keep it per call)
-        lens_model = LensModel(lens_model_list=['INTERPOL'], z_source=z_s, z_lens=self.data.z_l_list[index], cosmo=cosmo)
-        
-        return lens_model, scaled_kwargs
+
+        # [MOD 2] REUSE cached model
+        lens_model = self.ref_lens_models[index]
+        return lens_model, kwargs
 
 
 # --- Main Analysis Class ---
 
 class ClusterLensing(ClusterLensingUtils):
-    """
-    Main class for running lensing analysis, including optimization and MCMC.
-    Inherits data handling and basic calculations from ClusterLensingUtils.
-    """
     def calculate_images_and_delays(self, params: Dict[str, float], cluster_index: int) -> Dict[str, Any]:
         x_src, y_src = params["x_src"], params["y_src"]
         z_s = params.get("z_s", self.z_s_ref)
@@ -199,7 +231,8 @@ class ClusterLensing(ClusterLensingUtils):
             print("Warning: Invalid cosmological parameters (e.g., z_s <= z_l).")
             return {'image_positions': (np.array([]), np.array([])), 'time_delays': np.array([])}
 
-        solver = LensEquationSolver(lens_model)
+        # [MOD 2] REUSE cached solver
+        solver = self.ref_solvers[cluster_index]
         x_img, y_img = solver.image_position_from_source(
             x_src, y_src, [kwargs],
             min_distance=self.data.pixscale[cluster_index],
@@ -244,7 +277,8 @@ class ClusterLensing(ClusterLensingUtils):
         if lens_model is None:
             return 5e5  # Penalty for invalid cosmology
 
-        solver = LensEquationSolver(lens_model)
+        # [MOD 2] REUSE cached solver
+        solver = self.ref_solvers[index]
         x_img, y_img = solver.image_position_from_source(
             x_src, y_src, [kwargs],
             min_distance=self.data.pixscale[index],
@@ -293,60 +327,67 @@ class ClusterLensing(ClusterLensingUtils):
         if fit_hubble:
             bounds["H0"] = (60, 80)
 
-        args_for_de = (
-            self,
-            list(bounds.keys()),
-            dt_true,
-            index,
-            sigma_lum,
-            lum_dist_true
-        )
+        # ---------------------------------------------------------------------------------
+        # [FIX] Set global DE context so workers don't receive (unpicklable) 'self' via args
+        # ---------------------------------------------------------------------------------
+        _set_de_context(self, list(bounds.keys()), dt_true, index, sigma_lum, lum_dist_true)
 
         default_settings = {
-            'strategy': 'rand1bin', 'maxiter': 200, 'popsize': 32, 'tol': 1e-7,
+            'strategy': 'rand1bin', 'maxiter': 200, 'popsize': 50, 'tol': 1e-7,
             'mutation': (0.5, 1), 'recombination': 0.7, 'polish': False,
             'updating': 'deferred',
-            # [MODIFIED] do NOT set 'workers': -1 (which forks processes + copies memory)
             'disp': True
         }
         if de_settings:
             default_settings.update(de_settings)
 
-        early_stop_threshold = default_settings.pop('early_stop_threshold', 0.02)
+        early_stop_threshold = default_settings.pop('early_stop_threshold', 0.05)
         if early_stop_threshold is not None:
+            # [FIX] callback uses the global objective (no args)
             def callback_fn(xk, convergence):
-                current_chi_sq = _de_objective_func(xk, *args_for_de)
-                if current_chi_sq < early_stop_threshold:
-                    return True
-                return False
+                return _de_objective_func_global(xk) < early_stop_threshold
             default_settings['callback'] = callback_fn
 
-        # [MODIFIED] Use threads so memory is shared across workers
-        try:
-            n_threads = len(os.sched_getaffinity(0))
-            print(f"Using {n_threads} threads for DE optimization.")
-        except AttributeError:
-            n_threads = os.cpu_count()/2
+        # ---------------------------------------------------------------------------------
+        # [MOD 1] Use a PROCESS pool (Linux 'fork' keeps big arrays shared COW)
+        # ---------------------------------------------------------------------------------
 
-        with ThreadPoolExecutor(max_workers=n_threads) as pool:
+        # Choose number of worker processes in a Condor-friendly way
+        try:
+            # Respect cgroup/affinity set by the slot
+            n_available = len(os.sched_getaffinity(0))
+        except Exception:
+            n_available = os.cpu_count() or 1
+
+        # Allow override via environment (set in condor submit)
+        env_override = os.environ.get('DE_PROCS')  # use 'MCMC_PROCS' in run_mcmc_sampler
+        if env_override:
+            try:
+                n_procs = max(1, min(int(env_override), n_available))
+            except ValueError:
+                n_procs = n_available
+        else:
+            n_procs = n_available
+        ctx = mp.get_context('fork') if platform.startswith('linux') else mp.get_context()
+
+        with ctx.Pool(processes=n_procs) as pool:
             result = differential_evolution(
-                _de_objective_func, 
-                list(bounds.values()), 
-                args=args_for_de,
-                workers=pool.map,   # <-- threads, not processes
+                _de_objective_func_global,          # [FIX] no extra args
+                list(bounds.values()),
+                workers=pool.map,                   # map(func, iterable)
                 **default_settings
             )
         
         best_params = {key: val for key, val in zip(bounds.keys(), result.x)}
         return best_params, result.fun
-    
+
     def run_mcmc_sampler(self,
-                         dt_true: np.ndarray,
-                         index: int,
-                         initial_params: Dict[str, float],
-                         mcmc_settings: Dict[str, Any]) -> emcee.EnsembleSampler:
+                        dt_true: np.ndarray,
+                        index: int,
+                        initial_params: Dict[str, float],
+                        mcmc_settings: Dict[str, Any]) -> emcee.EnsembleSampler:
         n_walkers = mcmc_settings.get("n_walkers", 32)
-        n_steps = mcmc_settings.get("n_steps", 1000)
+        n_steps   = mcmc_settings.get("n_steps", 1000)
         sigma_lum = mcmc_settings.get("sigma_lum", 0.05)
         lum_dist_true = mcmc_settings.get("lum_dist_true")
 
@@ -360,36 +401,53 @@ class ClusterLensing(ClusterLensingUtils):
             bounds["H0"] = mcmc_settings.get("H0_bounds", (53, 92))
 
         ndim = len(bounds)
-        initial_state = np.array([initial_params[key] for key in bounds.keys()])
+        initial_state = np.array([initial_params[k] for k in bounds.keys()])
 
-        for j, key in enumerate(bounds.keys()):
-            if not (bounds[key][0] <= initial_state[j] <= bounds[key][1]):
-                raise ValueError(
-                    f"The initial best-fit parameter '{key}' with value {initial_state[j]:.3f} "
-                    f"is outside the MCMC prior bounds of {bounds[key]}."
-                )
+        # sanity: start inside priors
+        for j, k in enumerate(bounds.keys()):
+            lo, hi = bounds[k]
+            if not (lo <= initial_state[j] <= hi):
+                raise ValueError(f"Initial parameter '{k}'={initial_state[j]:.3f} outside prior {bounds[k]}.")
 
+        # initialize walkers tightly around the initial state
         p0 = np.zeros((n_walkers, ndim))
-        print(f"Initializing {n_walkers} MCMC walkers...")
         for i in range(n_walkers):
             while True:
-                proposed_pos = initial_state + 1e-4 * np.random.randn(ndim)
-                is_valid = True
-                for j, key in enumerate(bounds.keys()):
-                    if not (bounds[key][0] <= proposed_pos[j] <= bounds[key][1]):
-                        is_valid = False
-                        break
-                if is_valid:
-                    p0[i] = proposed_pos
+                prop = initial_state + 1e-4 * np.random.randn(ndim)
+                if all(bounds[k][0] <= prop[j] <= bounds[k][1] for j, k in enumerate(bounds.keys())):
+                    p0[i] = prop
                     break
-        print("Walkers initialized successfully.")
 
-        sampler = emcee.EnsembleSampler(
-            n_walkers, ndim, _log_posterior_func,
-            args=[self, dt_true, index, bounds, sigma_lum, lum_dist_true]
-        )
-        sampler.run_mcmc(p0, n_steps, progress=True)
+        # ===== NEW: set global context & run with a process pool =====
+        _set_mcmc_context(self, dt_true, index, bounds, sigma_lum, lum_dist_true)
+
+        # Choose number of worker processes in a Condor-friendly way
+        try:
+            # Respect cgroup/affinity set by the slot
+            n_available = len(os.sched_getaffinity(0))
+        except Exception:
+            n_available = os.cpu_count() or 1
+
+        # Allow override via environment (set in condor submit)
+        env_override = os.environ.get('DE_PROCS')  # use 'MCMC_PROCS' in run_mcmc_sampler
+        if env_override:
+            try:
+                n_procs = max(1, min(int(env_override), n_available))
+            except ValueError:
+                n_procs = n_available
+        else:
+            n_procs = n_available
+            
+        ctx = mp.get_context('fork') if platform.startswith('linux') else mp.get_context()
+
+        with ctx.Pool(processes=n_procs) as pool:
+            sampler = emcee.EnsembleSampler(
+                n_walkers, ndim, _log_posterior_global, pool=pool
+            )
+            sampler.run_mcmc(p0, n_steps, progress=True)
+
         return sampler
+
 
     def find_best_fit(self,
                       dt_true: np.ndarray,
@@ -473,33 +531,4 @@ class ClusterLensing(ClusterLensingUtils):
             chi_sq_for_median=chi_sq_final,
         )
         print(f"-> Saved {flat_samples.shape[0]} samples to {output_path}")
-    
-    def generate_source_positions(self, n_samples: int, index: int, search_range: float, img_no: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        x_center = self.data.x_center[index]
-        y_center = self.data.y_center[index]
-        
-        n = 0
-        x_srcs = np.array([])
-        y_srcs = np.array([])
-        z_ss = np.array([])
-        H0s = np.array([])
-        while n < n_samples:
-            x_src = np.random.uniform(x_center - search_range, x_center + search_range)
-            y_src = np.random.uniform(y_center - search_range, y_center + search_range)
-            z_s = np.random.uniform(2.0, 4.0)
-            H0 = np.random.uniform(65, 76)
-
-            test_params = {"x_src" : x_src, "y_src": y_src, "z_s": z_s, "H0": H0}
-            test_cluster = index
-            output = self.calculate_images_and_delays(
-                test_params, test_cluster
-            )
-            if len(output['image_positions'][0]) == img_no:
-                n += 1
-                x_srcs = np.append(x_srcs, x_src)
-                y_srcs = np.append(y_srcs, y_src)
-                z_ss = np.append(z_ss, z_s)
-                H0s = np.append(H0s, H0)
-                print(x_src, y_src, z_s, H0)
-
-        return index, x_srcs, y_srcs, z_ss, H0s
+# ======================= end cluster_local_tidy.py (MOD 1, MOD 2, and FIX) =======================

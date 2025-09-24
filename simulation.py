@@ -43,7 +43,7 @@ real_params = {
 }
 real_cluster = int(row["indices"])
 
-base_output_dir = pathlib.Path("/home/dices/Research/GWlensing_Brian/oddratio")
+base_output_dir = pathlib.Path(os.environ.get("OUT_DIR", ".")).resolve()
 OUT_DIR = base_output_dir / f"test_tidy_row{args.row}"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
