@@ -1,0 +1,17 @@
+universe       = vanilla
+getenv         = True
+executable     = run.sh
+arguments      = $(row)
+
+# Point to your CSV; FITS live on a shared FS reachable by all slots
+environment    = "CSV=/shared/oddratio/src_pos_tidy_v2.csv;OUT_DIR=/shared/out/sim"
+
+request_cpus   = 8
+request_memory = 4 GB
+
+initialdir     = ~
+output         = logs/row$(row).out
+error          = logs/row$(row).err
+log            = logs/job.log
+
+queue row from seq 0 99

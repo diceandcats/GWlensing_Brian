@@ -1,2 +1,8 @@
 ssh -p 1922 hiu-yeung.cheng@tgfli-s0.phy.cuhk.edu.hk
 ssh -p 1922 -i ~/.ssh/id_ed25519_cuhkgw hiu-yeung.cheng@tgfli-s0.phy.cuhk.edu.hk
+
+scp:
+# File
+scp /home/dices/Research/GWlensing_Brian/condor_one.sub hiu-yeung.cheng@tgfli-s0.phy.cuhk.edu.hk:~/clusterlensing/
+# Folder
+scp -r /home/dices/Research/GWlensing_Brian hiu-yeung.cheng@tgfli-s0.phy.cuhk.edu.hk:~/clusterlensing/

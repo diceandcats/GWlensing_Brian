@@ -1,10 +1,8 @@
 # pylint: skip-file
 from __future__ import annotations
 import os, time, random, pathlib, socket, tempfile
-import numpy as np
 import pandas as pd
 from typing import Mapping
-from pandas.api.types import is_numeric_dtype, is_string_dtype, is_object_dtype
 
 _LOCK_POLL = 0.2
 _LOCK_JITTER = 0.3
@@ -73,48 +71,17 @@ def update_csv_row(csv_path: str | os.PathLike,
     csv_path = pathlib.Path(csv_path)
     lockdir = _acquire_lock(csv_path)
     try:
+        # Read -> modify -> write to temp -> fsync -> atomic replace
         df = pd.read_csv(csv_path)
         if not (0 <= row_idx < len(df)):
             raise IndexError(f"Row {row_idx} out of range (len={len(df)}) for {csv_path}")
-
-        # 1) Ensure columns exist with sensible dtypes
-        for col, val in updates.items():
+        for col in updates.keys():
             if col not in df.columns:
-                # Pick a dtype from the value we plan to store
-                if isinstance(val, (int, np.integer)):
-                    df[col] = pd.Series([pd.NA] * len(df), dtype="Int64")
-                elif isinstance(val, float):
-                    df[col] = pd.Series([pd.NA] * len(df), dtype="Float64")
-                else:
-                    df[col] = pd.Series([pd.NA] * len(df), dtype="string")
-
-        # 2) Assign with dtype-safe coercion to avoid FutureWarning
+                df[col] = pd.NA
         for k, v in updates.items():
-            col = df[k]
-
-            # Treat empty strings/None as missing
-            if v is None or (isinstance(v, str) and v == ""):
-                if is_numeric_dtype(col):
-                    df.at[row_idx, k] = pd.NA  # or np.nan; both OK for numeric dtypes
-                else:
-                    # ensure string-capable dtype
-                    if not (is_string_dtype(col) or is_object_dtype(col)):
-                        df[k] = df[k].astype("string")
-                    df.at[row_idx, k] = pd.NA
-                continue
-
-            # If the column is numeric but value is a string, coerce to number (or NA)
-            if is_numeric_dtype(df[k]) and isinstance(v, str):
-                v = pd.to_numeric([v], errors="coerce")[0]
-
-            # If the column is non-numeric but value is numeric, it's fine; if it's
-            # not string-capable yet, make it "string" once.
-            if (not is_numeric_dtype(df[k])) and not (is_string_dtype(df[k]) or is_object_dtype(df[k])):
-                df[k] = df[k].astype("string")
-
             df.at[row_idx, k] = v
 
-        # 3) Atomic write
+        # write atomically to same directory
         fd, tmp_path = tempfile.mkstemp(dir=csv_path.parent,
                                         prefix=csv_path.name + ".tmp.",
                                         text=True)
@@ -123,8 +90,9 @@ def update_csv_row(csv_path: str | os.PathLike,
                 df.to_csv(fh, index=False)
                 fh.flush()
                 os.fsync(fh.fileno())
-            os.replace(tmp_path, csv_path)
+            os.replace(tmp_path, csv_path)  # atomic on same filesystem
         finally:
+            # if anything failed before replace, clean up
             try:
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
