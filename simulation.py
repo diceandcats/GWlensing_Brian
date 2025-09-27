@@ -48,16 +48,17 @@ OUT_DIR = base_output_dir / f"test_tidy_row{args.row}"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---- standard output columns we'll maintain in-place in the input CSV ----
+
 OUTPUT_DEFAULTS = {
-    "run_status": "STARTED",     # STARTED/OK/NO_FIT/ERROR
+    "run_status": "STARTED",
     "run_msg": "",
-    "localized_index": 0,
-    "localized_x": 0.0,
-    "localized_y": 0.0,
-    "localized_z": 0.0,
-    "localized_H0": 0.0,
-    "chi_sq": 0.0,
-    "accepted_clusters": "",     # e.g. "0,3"
+    "localized_index": np.nan,   # allow NA; ints will be float in CSV anyway
+    "localized_x": np.nan,
+    "localized_y": np.nan,
+    "localized_z": np.nan,
+    "localized_H0": np.nan,
+    "chi_sq": np.nan,
+    "accepted_clusters": "",
     "out_dir": "",
     "posterior_file": "",
     "corner_plot": "",

@@ -3,10 +3,11 @@ getenv         = True
 executable     = run.sh
 arguments      = 0
 initialdir     = /users/hiu-yeung.cheng/clusterlensing
-request_cpus   = 8
-request_memory = 8 GB
+request_cpus   = 16
+request_memory = 16 GB
 
-environment = "CSV=$ENV(HOME)/clusterlensing/oddratio/src_pos_tidy_v2.csv OUT_DIR=$ENV(HOME)/clusterlensing/out REQUEST_CPUS=$(request_cpus) DE_PROCS=$(request_cpus) MCMC_PROCS=$(request_cpus)"
+environment = "CSV=$ENV(HOME)/clusterlensing/oddratio/src_pos_tidy_v2.csv OUT_DIR=$ENV(HOME)/clusterlensing/out REQUEST_CPUS=$(request_cpus) DE_PROCS=$(request_cpus) MCMC_PROCS=$(request_cpus) FORCE_SPAWN=1"
+requirements   = (TARGET.Machine == "tgfli-s3.phy.cuhk.edu.hk")
 
 output         = logs/row0.out
 error          = logs/row0.err

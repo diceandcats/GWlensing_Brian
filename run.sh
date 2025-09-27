@@ -16,8 +16,10 @@ mkdir -p "$OUT_DIR" logs
 export DE_PROCS MCMC_PROCS
 
 echo "Row=$ROW OUT_DIR=$OUT_DIR DE_PROCS=$DE_PROCS MCMC_PROCS=$MCMC_PROCS"
-exec python3 simulation.py --csv "$CSV" --row "$ROW"
+exec python3 -u simulation.py --csv "$CSV" --row "$ROW"
 
+: "${MCMC_BACKEND:=threads}"
+export MCMC_BACKEND
 # For single row testing
 # set -euo pipefail
 # ROW="$1"
