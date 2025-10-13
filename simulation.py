@@ -38,9 +38,12 @@ row = df.iloc[args.row]
 real_params = {
     "x_src": float(row["x"]),
     "y_src": float(row["y"]),
-    "z_s":  float(row["z"]),
-    "H0":   float(row["H0"]),
 }
+if 'z' in row.index and pd.notna(row['z']):
+    real_params["z_s"] = float(row["z"])
+if 'H0' in row.index and pd.notna(row['H0']):
+    real_params["H0"] = float(row["H0"])
+
 real_cluster = int(row["indices"])
 
 base_output_dir = pathlib.Path(os.environ.get("OUT_DIR", ".")).resolve()
@@ -156,7 +159,11 @@ print(f"True time delays: {output['time_delays']}")
 dt_true = output['time_delays']
 
 # luminosity distance calculation
-cosmos = FlatLambdaCDM(H0=real_params['H0'], Om0=0.3)
+
+if 'H0' not in real_params:
+    cosmos = FlatLambdaCDM(H0=70, Om0=0.3)
+else:
+    cosmos = FlatLambdaCDM(H0=real_params["H0"], Om0=0.3)
 lum_dist_true = cosmos.luminosity_distance(real_params['z_s']).value  # Luminosity distance in Mpc
 print("True luminosity distances:", lum_dist_true)
 
@@ -167,11 +174,11 @@ mcmc_settings = {
     "n_walkers": 20,      # Number of MCMC walkers
     "n_steps": 20000,      # Number of steps per walker
     "fit_z": True,        # We want to fit for the source redshift (z_s)
-    "fit_hubble": True,   # We want to fit for the Hubble constant (H0)
+    "fit_hubble": False,   # We want to fit for the Hubble constant (H0)
     "lum_dist_true": lum_dist_true, # An external "true" luminosity distance measurement (in Mpc)
     "sigma_lum": 0.1,     # The fractional error on the luminosity distance
     # Define the prior boundaries for the parameters being fit in the MCMC
-    "z_bounds": (1.0, 4.0),
+    "z_bounds": (1.0, 5.0),
     "H0_bounds": (60, 80)
 }
 
