@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
     test_params = {"x_src" : 131, "y_src": 131, "z_s": 3.50, "H0": 72}
     test_cluster = 2
-    output = cluster_system.calculate_images_and_delays(
+    output = cluster_system.calculate_imgs_delays_magns(
         test_params, test_cluster
     )
     print(output['time_delays'])

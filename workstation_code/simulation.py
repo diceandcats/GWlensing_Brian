@@ -147,7 +147,7 @@ cluster_system = ClusterLensing(data=lensing_data, z_s_ref=z_s_ref)
 print("Setup complete. Lensing system initialized.")
 
 # Calculate the image positions and time delays for the test parameters
-output = cluster_system.calculate_images_and_delays(
+output = cluster_system.calculate_imgs_delays_magns(
     real_params, real_cluster
 )
 

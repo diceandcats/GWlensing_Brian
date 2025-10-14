@@ -221,7 +221,7 @@ class ClusterLensingUtils:
 # --- Main Analysis Class ---
 
 class ClusterLensing(ClusterLensingUtils):
-    def calculate_images_and_delays(self, params: Dict[str, float], cluster_index: int) -> Dict[str, Any]:
+    def calculate_imgs_delays_magns(self, params: Dict[str, float], cluster_index: int) -> Dict[str, Any]:
         x_src, y_src = params["x_src"], params["y_src"]
         z_s = params.get("z_s", self.z_s_ref)
         H0 = params.get("H0", self.base_cosmo.H0.value)
@@ -553,7 +553,7 @@ class ClusterLensing(ClusterLensingUtils):
 
                 test_params = {"x_src" : x_src, "y_src": y_src, "z_s": z_s, "H0": H0}
                 test_cluster = index
-                output = self.calculate_images_and_delays(
+                output = self.calculate_imgs_delays_magns(
                     test_params, test_cluster
                 )
                 if len(output['image_positions'][0]) == img_no:

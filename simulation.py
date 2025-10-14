@@ -151,7 +151,7 @@ cluster_system = ClusterLensing(data=lensing_data, z_s_ref=z_s_ref)
 print("Setup complete. Lensing system initialized.")
 
 # Calculate the image positions and time delays for the test parameters
-output = cluster_system.calculate_images_and_delays(
+output = cluster_system.calculate_imgs_delays_magns(
     real_params, real_cluster
 )
 
@@ -164,8 +164,11 @@ if 'H0' not in real_params:
     cosmos = FlatLambdaCDM(H0=70, Om0=0.3)
 else:
     cosmos = FlatLambdaCDM(H0=real_params["H0"], Om0=0.3)
-lum_dist_true = cosmos.luminosity_distance(real_params['z_s']).value  # Luminosity distance in Mpc
-print("True luminosity distances:", lum_dist_true)
+lum_dist_unlensed = cosmos.luminosity_distance(real_params['z_s']).value  # Luminosity distance in Mpc
+mu = output['magnifications']
+lum_dist_true = np.array([lum_dist_unlensed / np.abs(m) for m in mu])
+print("True luminosity distances:", lum_dist_unlensed)
+print("Lensed luminosity distances:", lum_dist_true)
 
 # test de then mcmc 
 print("\nRunning the full analysis pipeline...")
@@ -181,6 +184,8 @@ mcmc_settings = {
     "z_bounds": (1.0, 5.0),
     "H0_bounds": (60, 80)
 }
+
+# DE settings are following defaults in the class, can be adjusted if needed
 
 # Call the main analysis function
 # The function will first run DE to find the best cluster,

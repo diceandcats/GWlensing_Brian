@@ -216,8 +216,8 @@ class ClusterLensingUtils:
 
 
 class ClusterLensing(ClusterLensingUtils):
-    def calculate_images_and_delays(self, params: Dict[str, float], cluster_index: int) -> Dict[str, Any]:
-        """Calculate image positions and time delays for given source parameters and cluster index."""
+    def calculate_imgs_delays_magns(self, params: Dict[str, float], cluster_index: int) -> Dict[str, Any]:
+        """Calculate image positions, time delays and magnification for given source parameters and cluster index."""
         x_src, y_src = params["x_src"], params["y_src"]
         z_s = params.get("z_s", self.z_s_ref)
         H0 = params.get("H0", self.base_cosmo.H0.value)
@@ -238,8 +238,9 @@ class ClusterLensing(ClusterLensingUtils):
             return {"image_positions": (np.array([]), np.array([])), "time_delays": np.array([])}
 
         arrival_times = lens_model.arrival_time(x_img, y_img, [kwargs], x_source=x_src, y_source=y_src)
-        return {"image_positions": (x_img, y_img), "time_delays": np.sort(arrival_times - np.min(arrival_times))}
-
+        mu = lens_model.magnification(x_img, y_img, [kwargs])
+        return {"image_positions": (x_img, y_img), "time_delays": arrival_times - np.min(arrival_times), "magnifications": mu}
+    
     def calculate_time_delay_uncertainty(self, img: np.ndarray, index: int) -> np.ndarray:
         # img is [x_img, y_img]; RGI expects (y, x)
         xi = np.vstack((np.asarray(img[1]), np.asarray(img[0]))).T
@@ -252,7 +253,7 @@ class ClusterLensing(ClusterLensingUtils):
         dt_true: np.ndarray,
         index: int,
         sigma_lum: Optional[float] = None,
-        lum_dist_true: Optional[float] = None,
+        lum_dist_true: Optional[np.ndarray] = None,
     ) -> float:
         """Calculate chi-squared between model-predicted and true time delays (and optionally luminosity distance)."""
         x_src, y_src = params["x_src"], params["y_src"]
@@ -276,19 +277,28 @@ class ClusterLensing(ClusterLensingUtils):
             penalty = 3e3
             return (abs(len(x_img) - len(dt_true))) ** 0.5 * penalty
 
+        # Relative time delays
         t = lens_model.arrival_time(x_img, y_img, [kwargs], x_source=x_src, y_source=y_src)
         dt_candidate = t - t.min()
 
+        # Magnifications
+        mu = lens_model.magnification(x_img, y_img, [kwargs])
+
+
+        # Chi-squared for time delays
         mask = np.array(dt_true) != 0
         sigma_dt_pixel = self.calculate_time_delay_uncertainty([x_img, y_img], index)
         sigma_arr = sigma_dt_pixel * np.array(dt_true)
         chi_sq_dt = np.sum((dt_candidate[mask] - dt_true[mask]) ** 2 / sigma_arr[mask] ** 2)
-
+        
         chi_sq_lum = 0.0
-        if ("H0" in params) and (lum_dist_true is not None) and (sigma_lum is not None):
+        # Chi-squared for luminosity distance (if provided)
+        if sigma_lum is not None and lum_dist_true is not None:
             cosmo = self._get_cosmo(H0)
-            lum_dist_candidate = cosmo.luminosity_distance(z_s).value
-            chi_sq_lum = (lum_dist_candidate - lum_dist_true) ** 2 / (sigma_lum * lum_dist_true) ** 2
+            lum_dist_unlensed = cosmo.luminosity_distance(z_s).value
+            lum_dist_candidate = [lum_dist_unlensed / np.abs(m) for m in mu]
+
+            chi_sq_lum = np.sum((lum_dist_candidate - lum_dist_true) ** 2 / (sigma_lum * lum_dist_true) ** 2)
 
         return float(chi_sq_dt + chi_sq_lum)
 
@@ -442,6 +452,7 @@ class ClusterLensing(ClusterLensingUtils):
         """Run DE optimization across all clusters, optionally followed by MCMC sampling."""
         results = []
         mcmc_settings = mcmc_settings or {}
+        # Variables required for DE follow mcmc_settings, de_settings are for population, mutation, etc.
         fit_z = mcmc_settings.get("fit_z", False)
         fit_hubble = mcmc_settings.get("fit_hubble", False)
         lum_dist_true = mcmc_settings.get("lum_dist_true")
@@ -551,7 +562,7 @@ class ClusterLensing(ClusterLensingUtils):
 
             test_params = {"x_src": x_src, "y_src": y_src, "z_s": current_z_s, "H0": current_H0}
             test_cluster = index
-            output = self.calculate_images_and_delays(test_params, test_cluster)
+            output = self.calculate_imgs_delays_magns(test_params, test_cluster)
             if len(output["image_positions"][0]) == img_no:
                 n += 1
                 x_srcs = np.append(x_srcs, x_src)
