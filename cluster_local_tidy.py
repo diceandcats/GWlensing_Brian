@@ -100,7 +100,7 @@ class ClusterLensingUtils:
         self.data = data
         self.z_s_ref = z_s_ref
 
-        # Keep references (no copies) to the large maps; children will share via COW after fork.
+        # Keep references (no copies) to the large maps;
         self.alpha_maps_x_orig = data.alpha_maps_x
         self.alpha_maps_y_orig = data.alpha_maps_y
         self.lens_potential_maps_orig = data.lens_potential_maps
@@ -125,13 +125,13 @@ class ClusterLensingUtils:
         self._dist_cache_max = int(os.environ.get("DIST_CACHE_MAX_PROC", "1024"))
         self._dist_cache: OrderedDict = OrderedDict()
 
-        # Prebuild read-only interpolators for sigma_dt (safe to share via COW; inputs are read-only)
+        # Prebuild read-only interpolators for sigma_dt
         self._sigma_rgi = []
         for sigma in self.data.uncertainty_dt:
             _, n_y = sigma.shape  # deleted unused n_x
             points = (np.arange(n_y), np.arange(sigma.shape[0]))  # (y, x) order
             # Align with earlier code: points = (np.arange(n_y), np.arange(n_x))
-            # We keep the original logic: (y, x) indexing with xi stacking below
+            # Keep the original logic: (y, x) indexing with xi stacking below
             points = (np.arange(n_y), np.arange(sigma.shape[0]))
             self._sigma_rgi.append(
                 RegularGridInterpolator(points, sigma, method="linear", bounds_error=True)
@@ -476,10 +476,13 @@ class ClusterLensing(ClusterLensingUtils):
         print("\n--- DE Optimization Summary ---", flush=True)
         print(f"Best fit found for Cluster {best_result['cluster_index']} with chi^2 = {best_result['chi_sq']:.3f}", flush=True)
         print(f"Best-fit parameters: {best_result['de_params']}", flush=True)
-
+        if best_result["chi_sq"] > 50:
+            print("Best chi^2 is quite high; the fit is invalid.", flush=True)
+            return [], []
+            
         accepted_clusters = []
         if run_mcmc:
-            mcmc_threshold = 2.3 + best_result["chi_sq"]
+            mcmc_threshold = 2 + best_result["chi_sq"]  # log of Bayes factor >= 2
             for result in results:
                 if result["chi_sq"] <= mcmc_threshold:
                     accepted_clusters.append(result["cluster_index"])
