@@ -100,7 +100,7 @@ class ClusterLensingUtils:
         self.data = data
         self.z_s_ref = z_s_ref
 
-        # Keep references (no copies) to the large maps;
+        # Keep references (no copies) to the large maps; children will share via COW after fork.
         self.alpha_maps_x_orig = data.alpha_maps_x
         self.alpha_maps_y_orig = data.alpha_maps_y
         self.lens_potential_maps_orig = data.lens_potential_maps
@@ -125,13 +125,13 @@ class ClusterLensingUtils:
         self._dist_cache_max = int(os.environ.get("DIST_CACHE_MAX_PROC", "1024"))
         self._dist_cache: OrderedDict = OrderedDict()
 
-        # Prebuild read-only interpolators for sigma_dt
+        # Prebuild read-only interpolators for sigma_dt (safe to share via COW; inputs are read-only)
         self._sigma_rgi = []
         for sigma in self.data.uncertainty_dt:
             _, n_y = sigma.shape  # deleted unused n_x
             points = (np.arange(n_y), np.arange(sigma.shape[0]))  # (y, x) order
             # Align with earlier code: points = (np.arange(n_y), np.arange(n_x))
-            # Keep the original logic: (y, x) indexing with xi stacking below
+            # We keep the original logic: (y, x) indexing with xi stacking below
             points = (np.arange(n_y), np.arange(sigma.shape[0]))
             self._sigma_rgi.append(
                 RegularGridInterpolator(points, sigma, method="linear", bounds_error=True)
@@ -390,8 +390,8 @@ class ClusterLensing(ClusterLensingUtils):
         lum_dist_true = mcmc_settings.get("lum_dist_true")
 
         bounds = {
-            "x_src": mcmc_settings.get("x_bounds", (initial_params["x_src"] - 5, initial_params["x_src"] + 5)),
-            "y_src": mcmc_settings.get("y_bounds", (initial_params["y_src"] - 5, initial_params["y_src"] + 5)),
+            "x_src": mcmc_settings.get("x_bounds", (initial_params["x_src"] - 6, initial_params["x_src"] + 6)),
+            "y_src": mcmc_settings.get("y_bounds", (initial_params["y_src"] - 6, initial_params["y_src"] + 6)),
         }
         if "z_s" in initial_params:
             bounds["z_s"] = mcmc_settings.get("z_bounds", (1.0, 5.0))
@@ -476,22 +476,48 @@ class ClusterLensing(ClusterLensingUtils):
         print("\n--- DE Optimization Summary ---", flush=True)
         print(f"Best fit found for Cluster {best_result['cluster_index']} with chi^2 = {best_result['chi_sq']:.3f}", flush=True)
         print(f"Best-fit parameters: {best_result['de_params']}", flush=True)
-        if best_result["chi_sq"] > 50:
+        if best_result["chi_sq"] > 100:
             print("Best chi^2 is quite high; the fit is invalid.", flush=True)
             return [], []
             
         accepted_clusters = []
         if run_mcmc:
-            mcmc_threshold = 2 + best_result["chi_sq"]  # log of Bayes factor >= 2
+            mcmc_threshold = 5 + best_result["chi_sq"]  # initial rough threshold, cut the threshold to log 100 = 2 after mcmc
             for result in results:
                 if result["chi_sq"] <= mcmc_threshold:
-                    accepted_clusters.append(result["cluster_index"])
                     print(f"\n--- Running MCMC for Cluster {result['cluster_index']} (chi_sq={result['chi_sq']:.3f}) ---", flush=True)
                     sampler = self.run_mcmc_sampler(
                         dt_true, result["cluster_index"], result["de_params"], mcmc_settings
                     )
                     result["mcmc_sampler"] = sampler
             results = [res for res in results if "mcmc_sampler" in res]
+            # return the elements in results only if their chi_sq is less than 2 + best_result["chi_sq"]
+            for result in results:
+                cluster_idx = result['cluster_index']
+                sampler = result['mcmc_sampler']
+                burn_in_steps = 3000
+                labels = list(result['de_params'].keys())
+                flat_samples = sampler.get_chain(discard=burn_in_steps, flat=True)
+                medians = [float(np.percentile(flat_samples[:, i], 50)) for i in range(len(labels))]
+                # compute chi squared at the median
+                test_params_chi_sq = {labels[i]: medians[i] for i in range(len(labels))}
+                chi_sq_median = self._calculate_chi_squared(
+                params=test_params_chi_sq,
+                dt_true=dt_true,
+                index=cluster_idx,
+                sigma_lum=sigma_lum,
+                lum_dist_true=lum_dist_true
+                )
+                result['chi_sq'] = chi_sq_median
+            # filter results again based on the new chi_sq
+            best_result_mcmc = min(results, key=lambda x: x["chi_sq"])
+            final_threshold = 2 + best_result_mcmc["chi_sq"]
+            for result in results:
+                if result["chi_sq"] <= final_threshold:
+                    accepted_clusters.append(result["cluster_index"])
+            results = [res for res in results if res["cluster_index"] in accepted_clusters]
+            
+
 
         return results, accepted_clusters
 
