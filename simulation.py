@@ -177,7 +177,7 @@ print("\nRunning the full analysis pipeline...")
 mcmc_settings = {
     "n_walkers": 20,      # Number of MCMC walkers
     "n_steps": 20000,      # Number of steps per walker
-    "fit_z": True,        # We want to fit for the source redshift (z_s)
+    "fit_z": False,        # We want to fit for the source redshift (z_s)
     "fit_hubble": False,   # We want to fit for the Hubble constant (H0)
     "lum_dist_true": lum_dist_true, # An external "true" luminosity distance measurement (in Mpc)
     "sigma_lum": 0.1,     # The fractional error on the luminosity distance
@@ -209,13 +209,13 @@ if sample_failed:
             "accepted_clusters": "N/A",
             "chi_sq":  "N/A",
             "out_dir": "N/A",
-            "run_status": "NO_FIT",
+            "run_status": "NO_GUESS",
             "run_msg": f"len(mcmc_results)={len(mcmc_results)}",
-            "localized_index": 0,
-            "localized_x": 0.0,
-            "localized_y": 0.0,
-            "localized_z": 0.0,
-            "localized_H0": 0.0,
+            "localized_index": "N/A",
+            "localized_x": "N/A",
+            "localized_y": "N/A",
+            "localized_z": "N/A",
+            "localized_H0": "N/A",
         }
     update_csv_row(csv_path, args.row, updates)
     print(f"Updated CSV row {args.row} with zeros.")
@@ -255,7 +255,6 @@ else:
     accepted_str = ",".join(str(i) for i in accepted_cluster_indices)
     base_updates = {
         "accepted_clusters": accepted_str,
-        "chi_sq": float(min(r['chi_sq'] for r in mcmc_results)) if mcmc_results else 0.0,
         "out_dir": str(OUT_DIR),
     }
 
@@ -270,6 +269,7 @@ else:
             labels = list(result['de_params'].keys())
             flat_samples = sampler.get_chain(discard=burn_in_steps, flat=True)
             medians = [float(np.percentile(flat_samples[:, i], 50)) for i in range(len(labels))]
+            chi_sq_median = result['chi_sq']
 
             updates = {
                 **base_updates,
@@ -280,6 +280,7 @@ else:
                 "localized_y": medians[1],
                 "localized_z": medians[2] if len(medians) > 2 else 0.0,
                 "localized_H0": medians[3] if len(medians) > 3 else 0.0,
+                "chi_sq": chi_sq_median,
             }
             update_csv_row(csv_path, args.row, updates)
             print(f"Updated CSV row {args.row} with result for cluster {cluster_idx}.")
@@ -337,7 +338,6 @@ else:
                 title_kwargs={"fontsize": 12},
                 verbose=False
             )
-            fig_corner.suptitle(f"Corner Plot for Cluster {CLUSTER_INDEX_TO_PLOT}", fontsize=16)
             corner_plot_path = os.path.join(OUT_DIR, f"cluster_{CLUSTER_INDEX_TO_PLOT}_corner_from_saved.png")
             fig_corner.savefig(corner_plot_path, dpi=150)
             plt.close(fig_corner)
