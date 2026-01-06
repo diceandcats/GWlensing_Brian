@@ -269,7 +269,15 @@ else:
             labels = list(result['de_params'].keys())
             flat_samples = sampler.get_chain(discard=burn_in_steps, flat=True)
             medians = [float(np.percentile(flat_samples[:, i], 50)) for i in range(len(labels))]
-            chi_sq_median = result['chi_sq']
+            # compute chi squared at the median
+            test_params_chi_sq = {labels[i]: medians[i] for i in range(len(labels))}
+            chi_sq_median = cluster_system._calculate_chi_squared(
+            params=test_params_chi_sq,
+            dt_true=dt_true,
+            index=cluster_idx,
+            sigma_lum=0.1,
+            lum_dist_true=lum_dist_true
+            )
 
             updates = {
                 **base_updates,

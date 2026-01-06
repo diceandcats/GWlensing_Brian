@@ -242,10 +242,12 @@ class ClusterLensing(ClusterLensingUtils):
         return {"image_positions": (x_img, y_img), "time_delays": arrival_times - np.min(arrival_times), "magnifications": mu}
     
     def calculate_time_delay_uncertainty(self, img: np.ndarray, index: int) -> np.ndarray:
-        # img is [x_img, y_img]; RGI expects (y, x)
-        xi = np.vstack((np.asarray(img[1]), np.asarray(img[0]))).T
+        # img is [x_img, y_img]; RGI expects (y, x) in pixel coordinates
+        scale = 1.0 / self.data.pixscale[index]
+        xi = np.vstack((np.asarray(img[1]) * scale, np.asarray(img[0]) * scale)).T
         vals = self._sigma_rgi[index](xi)  # vectorized lookup
         return np.asarray(vals)
+
 
     def _calculate_chi_squared(
         self,
