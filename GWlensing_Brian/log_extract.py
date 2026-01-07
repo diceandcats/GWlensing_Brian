@@ -6,7 +6,7 @@ cluster_re = re.compile(r'^Cluster [0-5] DE best chi\^2:')
 fx_re = re.compile(r'^differential_evolution step \d+: f\(x\)=\s*([0-9]*\.[0-9]+|[0-9]+)')
 
 rows = []
-os.chdir("/home/dices/Research/GWlensing_Brian/outputs/fix_z")
+os.chdir("/home/dices/Research/GWlensing_Brian/with_z")
 for fname in sorted(glob.glob("*.out")):
     vals = []
     lines = open(fname, "r", encoding="utf-8", errors="ignore").read().splitlines()

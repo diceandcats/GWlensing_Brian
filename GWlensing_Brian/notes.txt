@@ -1,0 +1,87 @@
+Of course. This is an excellent question that gets to the heart of why the method is not just a random procedure, but a logical consequence of how partial derivatives work.
+
+Let's break down the logic step-by-step.
+
+The Core Idea: Reversing Partial Differentiation One Variable at a Time
+
+The entire method is based on a simple fact: partial integration is the inverse of partial differentiation. However, it comes with a crucial twist.
+
+1. The Analogy in Single-Variable Calculus
+
+First, think about a simple 1D problem. If you know the derivative f'(x) = 2x, you can find the original function f(x) by integrating:
+
+f(x) = ∫ 2x dx = x² + C
+
+The + C is the constant of integration. Why is it there? Because when you differentiate any constant, it becomes zero. So, when you integrate, you have to acknowledge that there could have been any constant there, and you add C to represent this ambiguity.
+
+2. The Complication in Two Dimensions
+
+Now let's move to 2D. We have two pieces of information:
+
+a_x = ∂ψ/∂x
+
+a_y = ∂ψ/∂y
+
+Let's try to reverse the first equation by integrating with respect to x:
+
+ψ(x, y) = ∫ a_x(x, y) dx
+
+This is where the twist comes in. When we calculated the partial derivative ∂ψ/∂x, we treated y as a constant. This means that any term in the original ψ that was only a function of y would have vanished during that differentiation.
+
+For example, if ψ(x, y) = x² + y³, then ∂ψ/∂x = 2x. The y³ term disappeared.
+
+Therefore, when we integrate with respect to x to go backward, our "constant of integration" isn't just a simple constant C. It's any possible function that only depends on y. We call this unknown function g(y).
+
+This gives us our first, incomplete expression for the potential:
+
+ψ(x, y) = [Result of integrating a_x w.r.t. x] + g(y)
+
+At this point, we have used all the information from the a_x map. We have found the x-dependent part of ψ, but the y-dependent part is still a complete mystery, bundled inside g(y).
+
+3. Using the Second Piece of Information to Solve the Mystery
+
+This is the key step. How do we find the unknown function g(y)? We use the other piece of information we haven't touched yet: the a_y map.
+
+We know from the problem definition that a_y = ∂ψ/∂y.
+We also have our own expression for ψ from the step above. Let's take the partial derivative of our expression with respect to y and see what we get:
+
+∂/∂y [ψ(x, y)] = ∂/∂y [ (Result of integrating a_x w.r.t. x) + g(y) ]
+
+Using the sum rule for derivatives, this becomes:
+
+∂ψ/∂y = ∂/∂y [∫ a_x(x, y) dx] + g'(y)
+(where g'(y) is the ordinary derivative of g(y) since it only has one variable).
+
+Now we can equate the two things we know about ∂ψ/∂y:
+
+The known map: a_y(x, y)
+
+The expression we just derived: ∂/∂y [∫ a_x dx] + g'(y)
+
+Setting them equal gives us an equation for our unknown:
+
+a_y(x, y) = ∂/∂y [∫ a_x(x, y) dx] + g'(y)
+
+Rearranging to solve for g'(y):
+
+g'(y) = a_y(x, y) - ∂/∂y [∫ a_x(x, y) dx]
+
+4. The "Magic" Cancellation (The Curl-Free Condition)
+
+This is the most important part. The expression on the right-hand side looks like it depends on both x and y. But if the original vector field a was a true gradient field, all the x dependence on the right side must cancel out, leaving only a function of y.
+
+This is guaranteed to happen if ∂a_y/∂x = ∂a_x/∂y (the conservative field condition). This condition ensures that the mixed second partial derivatives of ψ are equal (∂²ψ/∂x∂y = ∂²ψ/∂y∂x), which is what makes the x terms vanish in the equation for g'(y).
+
+So, we are left with a simple, one-variable equation for g'(y). We can now find g(y) by performing a simple 1D integration with respect to y.
+
+Summary of the Logic
+
+The method works by systematically "peeling back" the layers of differentiation:
+
+Integrate a_x: This recovers the x-dependent structure of ψ but leaves an ambiguity (g(y)) because the ∂/∂x operation destroyed all information that was purely y-dependent.
+
+Differentiate the result w.r.t y: This creates an expression for ∂ψ/∂y that contains our unknown function g(y).
+
+Equate with a_y: By setting our expression equal to the known a_y map, we create an equation that allows us to isolate and solve for the unknown g(y).
+
+Assemble: Once g(y) is found, we add it back to our result from step 1 to get the complete, reconstructed potential ψ.
