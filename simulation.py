@@ -43,8 +43,11 @@ if 'z' in row.index and pd.notna(row['z']):
     real_params["z_s"] = float(row["z"])
 if 'H0' in row.index and pd.notna(row['H0']):
     real_params["H0"] = float(row["H0"])
+real_params.setdefault("z_s", 1.5)
 
 real_cluster = int(row["indices"])
+if not 0 <= real_cluster < 6:
+    raise ValueError(f"cluster index must be 0..5, got {real_cluster}")
 
 base_output_dir = pathlib.Path(os.environ.get("OUT_DIR", ".")).resolve()
 OUT_DIR = base_output_dir / f"test_tidy_row{args.row}"
@@ -100,7 +103,9 @@ for i in scenarios:
     clustername = scenarios[i]
     full_cluster_name = full_cluster_names[clustername]
 
-    file_dir = os.getcwd()
+    # Resolve model products relative to this script so the command works from
+    # any current working directory, including batch schedulers' launch dirs.
+    file_dir = pathlib.Path(__file__).resolve().parent
     fits_filex = os.path.join(
         file_dir,
         f'GCdata/{full_cluster_name}/cats copy/hlsp_frontier_model_{clustername}_cats_v4_x-arcsec-deflect.fits'
@@ -147,7 +152,11 @@ lensing_data = LensingData(
 #Initialize the Main Analysis Class
 z_s_ref = real_params.get("z_s", 1.5)  # Reference source redshift
 print("DEBUG: Initializing ClusterLensing with z_s_ref =", z_s_ref)
-cluster_system = ClusterLensing(data=lensing_data, z_s_ref=z_s_ref)
+cluster_system = ClusterLensing(
+    data=lensing_data,
+    z_s_ref=z_s_ref,
+    cosmo_H0=real_params.get("H0", 70.0),
+)
 
 print("Setup complete. Lensing system initialized.")
 

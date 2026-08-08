@@ -105,16 +105,19 @@ class ClusterLensingUtils:
         self.alpha_maps_y_orig = data.alpha_maps_y
         self.lens_potential_maps_orig = data.lens_potential_maps
 
-        self.map_sizes = [len(m) for m in data.alpha_maps_x]
+        self.map_sizes = [m.shape for m in data.alpha_maps_x]
         self.base_cosmo = FlatLambdaCDM(H0=cosmo_H0, Om0=cosmo_Om0)
 
         # Precompute grids once (arcsec)
         self._x_grids: List[np.ndarray] = []
+        self._y_grids: List[np.ndarray] = []
         for i in range(len(data.z_l_list)):
-            size = self.map_sizes[i]
+            n_y, n_x = self.map_sizes[i]
             pix = np.float32(data.pixscale[i])
-            x_grid = np.linspace(0, size - 1, size, dtype=np.float32) * pix
+            x_grid = np.arange(n_x, dtype=np.float32) * pix
+            y_grid = np.arange(n_y, dtype=np.float32) * pix
             self._x_grids.append(x_grid)
+            self._y_grids.append(y_grid)
 
         # Per-process bounded caches (LRU)
         self._buffers: List[Optional[Dict[str, np.ndarray]]] = [None] * len(self.data.z_l_list)
@@ -128,11 +131,8 @@ class ClusterLensingUtils:
         # Prebuild read-only interpolators for sigma_dt (safe to share via COW; inputs are read-only)
         self._sigma_rgi = []
         for sigma in self.data.uncertainty_dt:
-            _, n_y = sigma.shape  # deleted unused n_x
-            points = (np.arange(n_y), np.arange(sigma.shape[0]))  # (y, x) order
-            # Align with earlier code: points = (np.arange(n_y), np.arange(n_x))
-            # We keep the original logic: (y, x) indexing with xi stacking below
-            points = (np.arange(n_y), np.arange(sigma.shape[0]))
+            n_y, n_x = sigma.shape
+            points = (np.arange(n_y), np.arange(n_x))  # array order: (y, x)
             self._sigma_rgi.append(
                 RegularGridInterpolator(points, sigma, method="linear", bounds_error=True)
             )
@@ -199,6 +199,7 @@ class ClusterLensingUtils:
 
         scale = np.float32(D_LS / D_S)
         x_grid = self._x_grids[index]
+        y_grid = self._y_grids[index]
         shape = self.alpha_maps_x_orig[index].shape
 
         buf = self._get_buffers(index, shape)
@@ -208,7 +209,7 @@ class ClusterLensingUtils:
 
         return {
             "grid_interp_x": x_grid,
-            "grid_interp_y": x_grid,
+            "grid_interp_y": y_grid,
             "f_": buf["f_"],
             "f_x": buf["f_x"],
             "f_y": buf["f_y"],
@@ -239,7 +240,12 @@ class ClusterLensing(ClusterLensingUtils):
 
         arrival_times = lens_model.arrival_time(x_img, y_img, [kwargs], x_source=x_src, y_source=y_src)
         mu = lens_model.magnification(x_img, y_img, [kwargs])
-        return {"image_positions": (x_img, y_img), "time_delays": arrival_times - np.min(arrival_times), "magnifications": mu}
+        order = np.argsort(arrival_times)
+        x_img = np.asarray(x_img)[order]
+        y_img = np.asarray(y_img)[order]
+        arrival_times = np.asarray(arrival_times)[order]
+        mu = np.asarray(mu)[order]
+        return {"image_positions": (x_img, y_img), "time_delays": arrival_times - arrival_times[0], "magnifications": mu}
     
     def calculate_time_delay_uncertainty(self, img: np.ndarray, index: int) -> np.ndarray:
         # img is [x_img, y_img]; expects (y, x) in pixel coordinates
@@ -281,10 +287,14 @@ class ClusterLensing(ClusterLensingUtils):
 
         # Relative time delays
         t = lens_model.arrival_time(x_img, y_img, [kwargs], x_source=x_src, y_source=y_src)
-        dt_candidate = t - t.min()
+        order = np.argsort(t)
+        x_img = np.asarray(x_img)[order]
+        y_img = np.asarray(y_img)[order]
+        t = np.asarray(t)[order]
+        dt_candidate = t - t[0]
 
-        # Magnifications
-        mu = lens_model.magnification(x_img, y_img, [kwargs])
+        # Magnifications, in the same arrival-time order as the observations.
+        mu = np.asarray(lens_model.magnification(x_img, y_img, [kwargs]))
 
 
         # Chi-squared for time delays
@@ -497,7 +507,7 @@ class ClusterLensing(ClusterLensingUtils):
             for result in results:
                 cluster_idx = result['cluster_index']
                 sampler = result['mcmc_sampler']
-                burn_in_steps = 3000
+                burn_in_steps = int(mcmc_settings.get("burn_in_steps", 3000))
                 labels = list(result['de_params'].keys())
                 flat_samples = sampler.get_chain(discard=burn_in_steps, flat=True)
                 medians = [float(np.percentile(flat_samples[:, i], 50)) for i in range(len(labels))]

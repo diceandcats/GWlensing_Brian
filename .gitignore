@@ -1,5 +1,5 @@
 cluster_img
-GCdata
+GCdata/
 GCdata_cats_ori
 with_z_imgs
 fix_z
@@ -7,3 +7,8 @@ fix_z_imgs
 with_z
 outputs
 *.pdf
+
+## Plots
+r_nondet_plots/
+Report images sem2/
+model_comparisons/
