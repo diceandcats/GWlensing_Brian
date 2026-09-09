@@ -1,0 +1,34 @@
+universe       = vanilla
+getenv         = True
+
+# This job uses the project and its 4+ GiB GCdata directory in place.  The
+# submit and execute machines must therefore see the same filesystem.
+should_transfer_files = NO
+initialdir     = $ENV(HOME)/GWlensing_Brian
+
+executable     = $ENV(HOME)/GWlensing_Brian/run_diff.sh
+arguments      = $(row)
+
+# HTCondor's quoted environment syntax separates entries with spaces.  Using
+# semicolons here makes the entire remainder of the line part of CSV on recent
+# HTCondor releases.
+environment    = "CSV=src_pos_tidy_xyz_copy.csv OUT_DIR=out SIMULATION_MODEL=cats LOCALIZATION_MODEL=keeton SIGMA_DT_FALLBACK=0.1 BURN_IN=3000 MAX_MAP_PIXELS=1600 REQUEST_CPUS=$(request_cpus) DE_PROCS=$(request_cpus) MCMC_PROCS=$(request_cpus)"
+
+request_cpus   = 16
+request_memory = 16 GB
+request_disk   = 8 GB
+requirements   = (TARGET.OpSys == "LINUX")
+
+# Create this directory once before submitting: mkdir -p logs out
+output         = logs/diff_cats_to_keeton_row$(row).out
+error          = logs/diff_cats_to_keeton_row$(row).err
+log            = logs/simulation_diff.log
+
+queue row from (
+0
+11
+21
+31
+41
+57
+)

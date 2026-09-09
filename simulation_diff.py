@@ -1,12 +1,5 @@
 """Simulate an event with one HFF lens model and localize it with another.
 
-The numerical pipeline is the same as :mod:`simulation`, but the event and
-localization maps are loaded independently.  Consequently, the two model
-families do not need to have the same array shape or pixel scale.  Every map is
-kept in its own angular coordinate system (with optional anti-aliased
-downsampling of exceptionally large maps) and is passed to lenstronomy's
-``INTERPOL`` lens model by :class:`cluster_local_tidy.ClusterLensing`.
-
 Examples
 --------
 Simulate with CATS and localize with Keeton (the defaults)::
@@ -17,13 +10,6 @@ Choose the two families explicitly::
 
     python simulation_diff.py --csv src_pos_tidy_xyz.csv --row 0 \
         --simulation-model cats --localization-model keeton
-
-The supplied deflection products are normalized to ``D_ls / D_s = 1``.  The
-``ClusterLensing`` class applies that cosmological factor at each trial source
-redshift.  This script separately converts each family's potential to
-arcsec^2 by fitting ``gradient(psi) = alpha``; this recovers, for example, the
-pixel-area conversion needed by Williams and the radian-squared conversion
-needed by Diego.
 """
 
 # pylint: skip-file
@@ -66,9 +52,6 @@ class ClusterSpec:
     key: str
     directory: str
     lens_redshift: float
-    cats_pixscale: float
-    cats_x_center: float
-    cats_y_center: float
     search_window: float
 
 
@@ -79,14 +62,22 @@ class ModelSpec:
     version: str
 
 
-# Order must stay identical to the integer cluster indices used in the CSV.
+@dataclass(frozen=True)
+class MapGeometry:
+    """Map pixel scale and center."""
+
+    pixscale: float
+    x_center: float
+    y_center: float
+
+
 CLUSTERS = (
-    ClusterSpec("abell370", "Abell 370", 0.375, 0.2, 77.0, 79.0, 90.0),
-    ClusterSpec("abell2744", "Abell 2744", 0.308, 0.3, 175.0, 180.0, 120.0),
-    ClusterSpec("abells1063", "Abell S1063", 0.351, 0.2, 100.0, 100.0, 100.0),
-    ClusterSpec("macs0416", "MACS J0416.1-2403", 0.397, 0.3, 120.0, 120.0, 100.0),
-    ClusterSpec("macs0717", "MACS J0717.5+3745", 0.545, 0.8, 250.0, 240.0, 150.0),
-    ClusterSpec("macs1149", "MACS J1149.5+2223", 0.543, 0.5, 150.0, 150.0, 100.0),
+    ClusterSpec("abell370", "Abell 370", 0.375, 90.0),
+    ClusterSpec("abell2744", "Abell 2744", 0.308, 120.0),
+    ClusterSpec("abells1063", "Abell S1063", 0.351, 100.0),
+    ClusterSpec("macs0416", "MACS J0416.1-2403", 0.397, 100.0),
+    ClusterSpec("macs0717", "MACS J0717.5+3745", 0.545, 150.0),
+    ClusterSpec("macs1149", "MACS J1149.5+2223", 0.543, 100.0),
 )
 
 MODELS = {
@@ -96,13 +87,21 @@ MODELS = {
     "keeton": ModelSpec("keeton", "keeton", "v4"),
 }
 
-MODEL_ALIASES = {"cat": "cats", "keeton": "keeton"}
+# Preserve the CATS coordinates used by the source catalog and simulation.py.
+MODEL_GEOMETRY_OVERRIDES = {
+    ("cats", "abell370"): MapGeometry(0.2, 77.0, 79.0),
+    ("cats", "abell2744"): MapGeometry(0.3, 175.0, 180.0),
+    ("cats", "abells1063"): MapGeometry(0.2, 100.0, 100.0),
+    ("cats", "macs0416"): MapGeometry(0.3, 120.0, 120.0),
+    ("cats", "macs0717"): MapGeometry(0.8, 250.0, 240.0),
+    ("cats", "macs1149"): MapGeometry(0.5, 150.0, 150.0),
+}
 
 
 def normalize_model_name(value: str) -> str:
     """Resolve convenient aliases used by the on-disk directories."""
 
-    key = MODEL_ALIASES.get(value.lower(), value.lower())
+    key = "cats" if value.lower() == "cat" else value.lower()
     if key not in MODELS:
         raise argparse.ArgumentTypeError(
             f"unknown model {value!r}; choose from {', '.join(MODELS)}"
@@ -130,18 +129,9 @@ def read_fits_map(path: Path) -> tuple[np.ndarray, fits.Header]:
     return data, header
 
 
-def native_pixscale(
-    cluster: ClusterSpec, model_name: str, header: fits.Header
-) -> float:
-    """Return arcsec/pixel, preserving simulation.py's calibrated CATS values."""
+def wcs_pixscale(cluster: ClusterSpec, model_name: str, wcs: WCS) -> float:
+    """Return an isotropic native pixel scale in arcsec/pixel."""
 
-    # These are the scales used to create the source-position CSV and therefore
-    # define its coordinate system.  In particular, the MACS1149 cutout header
-    # does not retain the 0.5 arcsec sampling used by the original simulation.
-    if model_name == "cats":
-        return cluster.cats_pixscale
-
-    wcs = WCS(header).celestial
     scales = np.asarray(proj_plane_pixel_scales(wcs), dtype=float) * 3600.0
     if scales.size != 2 or np.any(~np.isfinite(scales)) or np.any(scales <= 0):
         raise ValueError(f"invalid celestial pixel scale for {cluster.key}/{model_name}")
@@ -151,6 +141,55 @@ def native_pixscale(
             f"{scales[0]:.6g} x {scales[1]:.6g} arcsec"
         )
     return float(np.mean(scales))
+
+
+def native_geometry(
+    cluster: ClusterSpec,
+    model_name: str,
+    header: fits.Header,
+    shape: tuple[int, int],
+) -> tuple[MapGeometry, str]:
+    """Read model-specific scale and target center, with optional overrides."""
+
+    override = MODEL_GEOMETRY_OVERRIDES.get((model_name, cluster.key))
+    if override is not None:
+        return override, "calibrated override"
+
+    wcs = WCS(header).celestial
+    if not wcs.has_celestial:
+        raise ValueError(f"missing celestial WCS for {cluster.key}/{model_name}")
+    pixscale = wcs_pixscale(cluster, model_name, wcs)
+    if "RA_TARG" not in header or "DEC_TARG" not in header:
+        raise ValueError(
+            f"missing RA_TARG/DEC_TARG needed to center {cluster.key}/{model_name}"
+        )
+
+    center_pixel = np.asarray(
+        wcs.all_world2pix(
+            [[float(header["RA_TARG"]), float(header["DEC_TARG"])]], 0
+        )[0],
+        dtype=float,
+    )
+    ny, nx = shape
+    if (
+        center_pixel.shape != (2,)
+        or np.any(~np.isfinite(center_pixel))
+        or not 0.0 <= center_pixel[0] <= nx - 1
+        or not 0.0 <= center_pixel[1] <= ny - 1
+    ):
+        raise ValueError(
+            f"target center lies outside {cluster.key}/{model_name} map: "
+            f"pixel={center_pixel}, shape={shape}"
+        )
+
+    return (
+        MapGeometry(
+            pixscale=pixscale,
+            x_center=float(center_pixel[0] * pixscale),
+            y_center=float(center_pixel[1] * pixscale),
+        ),
+        "FITS WCS target",
+    )
 
 
 def potential_unit_scale(
@@ -170,8 +209,7 @@ def potential_unit_scale(
     if gx.size < 20:
         raise ValueError("too few finite map pixels to determine potential units")
 
-    # A constant alpha offset is a linear-potential gauge, so remove each mean
-    # before estimating the unit conversion.
+    # Ignore constant deflection offsets when fitting the potential units.
     gx -= np.mean(gx)
     gy -= np.mean(gy)
     ax -= np.mean(ax)
@@ -214,7 +252,10 @@ def limit_map_resolution(
     if max_map_pixels <= 0 or max(shape) <= max_map_pixels:
         return arrays, pixscale
     ratio = (max(shape) - 1) / (max_map_pixels - 1)
-    new_shape = tuple(max(3, int(np.floor((size - 1) / ratio)) + 1) for size in shape)
+    new_shape = tuple(
+        max(3, int(np.floor((size - 1) / ratio + 1e-9)) + 1)
+        for size in shape
+    )
     source_y = np.arange(new_shape[0], dtype=float) * ratio
     source_x = np.arange(new_shape[1], dtype=float) * ratio
     xx, yy = np.meshgrid(source_x, source_y)
@@ -251,17 +292,19 @@ def load_cluster_maps(
             f"alpha_x={alpha_x.shape}, alpha_y={alpha_y.shape}, psi={psi.shape}"
         )
 
-    pixscale = native_pixscale(cluster, model_name, header)
-    inferred_psi_scale, fit_error = potential_unit_scale(
-        psi, alpha_x, alpha_y, pixscale
+    geometry, geometry_note = native_geometry(
+        cluster, model_name, header, alpha_x.shape
     )
-    # CATS is already in arcsec^2; retaining exactly 1.0 reproduces
-    # simulation.py instead of applying insignificant numerical-fit noise.
+    native_pixscale = geometry.pixscale
+    inferred_psi_scale, fit_error = potential_unit_scale(
+        psi, alpha_x, alpha_y, native_pixscale
+    )
+    # Keep the CATS potential unchanged to match simulation.py.
     psi_scale = 1.0 if model_name == "cats" else inferred_psi_scale
     psi *= np.float32(psi_scale)
     native_shape = alpha_x.shape
-    (alpha_x, alpha_y, psi), pixscale = limit_map_resolution(
-        (alpha_x, alpha_y, psi), pixscale, max_map_pixels
+    (alpha_x, alpha_y, psi), effective_pixscale = limit_map_resolution(
+        (alpha_x, alpha_y, psi), native_pixscale, max_map_pixels
     )
 
     sigma_path = product_path(cluster, model_name, "sigma_dt")
@@ -269,26 +312,20 @@ def load_cluster_maps(
         sigma_dt, _ = read_fits_map(sigma_path)
         sigma_dt = resample_to_shape(sigma_dt, native_shape)
         if native_shape != alpha_x.shape:
-            # Uncertainty is a scalar field.  Use the same angular coordinate
-            # sampling as the lens maps; smoothing is appropriate when binning.
+            # Downsample uncertainty on the lens-map grid.
             (sigma_dt,), _ = limit_map_resolution(
-                (sigma_dt,), native_pixscale(cluster, model_name, header), max_map_pixels
+                (sigma_dt,), native_pixscale, max_map_pixels
             )
         sigma_note = sigma_path.name
     else:
         sigma_dt = np.full(alpha_x.shape, sigma_fallback, dtype=np.float32)
         sigma_note = f"constant {sigma_fallback:g}"
 
-    ny, nx = alpha_x.shape
-    if model_name == "cats":
-        x_center, y_center = cluster.cats_x_center, cluster.cats_y_center
-    else:
-        x_center = 0.5 * (nx - 1) * pixscale
-        y_center = 0.5 * (ny - 1) * pixscale
-
     print(
         f"[{model_name:8s}] {cluster.key:11s}: shape={alpha_x.shape}, "
-        f"pixscale={pixscale:.6g} arcsec, psi_scale={psi_scale:.7g}, "
+        f"pixscale={effective_pixscale:.6g} arcsec, "
+        f"center=({geometry.x_center:.4g}, {geometry.y_center:.4g}) arcsec "
+        f"[{geometry_note}], psi_scale={psi_scale:.7g}, "
         f"gradient_error={fit_error:.3g}, sigma_dt={sigma_note}",
         flush=True,
     )
@@ -297,7 +334,15 @@ def load_cluster_maps(
             f"large gradient(psi)-alpha mismatch for {cluster.key}/{model_name}: "
             f"relative RMS={fit_error:.3g}"
         )
-    return alpha_x, alpha_y, psi, sigma_dt, pixscale, x_center, y_center
+    return (
+        alpha_x,
+        alpha_y,
+        psi,
+        sigma_dt,
+        effective_pixscale,
+        geometry.x_center,
+        geometry.y_center,
+    )
 
 
 def build_lensing_data(
@@ -325,7 +370,17 @@ def build_lensing_data(
         y_centers.append(y_center)
         height = (ax.shape[0] - 1) * pix
         width = (ax.shape[1] - 1) * pix
-        search_windows.append(min(cluster.search_window, 0.9 * width, 0.9 * height))
+        if not 0.0 <= x_center <= width or not 0.0 <= y_center <= height:
+            raise ValueError(
+                f"center ({x_center:.6g}, {y_center:.6g}) is outside the "
+                f"downsampled {cluster.key}/{model_name} extent "
+                f"({width:.6g}, {height:.6g}) arcsec"
+            )
+        centered_width = 2.0 * min(x_center, width - x_center)
+        centered_height = 2.0 * min(y_center, height - y_center)
+        search_windows.append(
+            min(cluster.search_window, 0.9 * centered_width, 0.9 * centered_height)
+        )
 
     return LensingData(
         alpha_maps_x=alpha_x_maps,
@@ -356,8 +411,6 @@ def parse_args() -> argparse.Namespace:
         "--sigma-dt-fallback", type=float, default=0.1,
         help="fractional time-delay uncertainty if a model has no sigma_dt FITS map",
     )
-    parser.add_argument("--n-walkers", type=int, default=20)
-    parser.add_argument("--n-steps", type=int, default=20000)
     parser.add_argument("--burn-in", type=int, default=3000)
     parser.add_argument(
         "--max-map-pixels", type=int, default=1600,
@@ -372,10 +425,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--row must be non-negative")
     if args.sigma_dt_fallback <= 0:
         parser.error("--sigma-dt-fallback must be positive")
-    if args.n_steps <= args.burn_in:
-        parser.error("--n-steps must be greater than --burn-in")
-    if args.n_walkers < 4:
-        parser.error("--n-walkers must be at least 4")
+    if args.burn_in >= 20000:
+        parser.error("--burn-in must be less than 20000")
     if args.max_map_pixels != 0 and args.max_map_pixels < 32:
         parser.error("--max-map-pixels must be 0 or at least 32")
     return args
@@ -404,8 +455,6 @@ def main() -> None:
     args = parse_args()
     csv_path = Path(args.csv).resolve()
     frame = pd.read_csv(csv_path)
-    if args.row >= len(frame):
-        raise IndexError(f"CSV row {args.row} is outside a table with {len(frame)} rows")
     row = frame.iloc[args.row]
 
     real_params = {"x_src": float(row["x"]), "y_src": float(row["y"])}
@@ -415,8 +464,6 @@ def main() -> None:
         real_params["H0"] = float(row["H0"])
     real_params.setdefault("z_s", 1.5)
     real_cluster = int(row["indices"])
-    if not 0 <= real_cluster < len(CLUSTERS):
-        raise ValueError(f"cluster index must be 0..{len(CLUSTERS) - 1}, got {real_cluster}")
 
     base_output_dir = Path(os.environ.get("OUT_DIR", ".")).resolve()
     out_dir = base_output_dir / (
@@ -469,7 +516,7 @@ def main() -> None:
         cosmos = FlatLambdaCDM(H0=real_params.get("H0", 70.0), Om0=0.3)
         lum_dist_unlensed = cosmos.luminosity_distance(real_params["z_s"]).value
         magnifications = np.asarray(event["magnifications"], dtype=float)
-        # Preserve simulation.py's luminosity-distance convention exactly.
+        # Match simulation.py's luminosity-distance convention.
         lum_dist_true = lum_dist_unlensed / np.abs(magnifications)
         print(f"True luminosity distance: {lum_dist_unlensed}")
         print(f"Lensed luminosity distances: {lum_dist_true}")
@@ -487,8 +534,8 @@ def main() -> None:
             return
 
         mcmc_settings = {
-            "n_walkers": args.n_walkers,
-            "n_steps": args.n_steps,
+            "n_walkers": 20,
+            "n_steps": 20000,
             "burn_in_steps": args.burn_in,
             "fit_z": False,
             "fit_hubble": False,
@@ -597,8 +644,7 @@ def main() -> None:
                 flat_chain = saved["flat_chain"]
                 full_chain = saved["chain"]
                 param_labels = saved["param_labels"]
-                # Source coordinates from two distinct model grids need not have
-                # the same origin/gauge, so only draw truths for a same-model run.
+                # Cross-model source coordinates may have different gauges.
                 truths = None
                 if args.simulation_model == args.localization_model:
                     truths = [real_params["x_src"], real_params["y_src"]]

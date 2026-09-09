@@ -12,3 +12,4 @@ outputs
 r_nondet_plots/
 Report images sem2/
 model_comparisons/
+*_validation/

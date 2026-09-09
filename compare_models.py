@@ -732,6 +732,10 @@ def plot_comparison(
 ) -> list[Path]:
     """Plot potential, source-plane caustic, and image-plane critical rows."""
 
+    figure_title_size = 23
+    panel_title_size = 17
+    axis_label_size = 15
+    tick_label_size = 13
     display_psi = [remove_affine_potential_gauge(model.psi, x, y) for model in models]
     psi_limit = robust_symmetric_limit(display_psi)
 
@@ -748,7 +752,7 @@ def plot_comparison(
     figure.suptitle(
         f"{cluster.label}: lens-model comparison "
         f"($z_s={cluster.source_redshift:.3f}$)",
-        fontsize=17,
+        fontsize=figure_title_size,
     )
     extent = image_extent(x, y)
     caustic_curves = [
@@ -781,7 +785,7 @@ def plot_comparison(
         )
         psi_axis.set_title(
             f"{model.spec.label}\n" + r"potential $\psi$",
-            fontsize=13,
+            fontsize=panel_title_size,
         )
         psi_axis.set_xlim(extent[0], extent[1])
         psi_axis.set_ylim(extent[2], extent[3])
@@ -796,7 +800,7 @@ def plot_comparison(
         caustic_axis.set_title(
             f"{model.spec.label}\n"
             + r"caustics",
-            fontsize=13,
+            fontsize=panel_title_size,
         )
 
         for curve in model.critical_curves or []:
@@ -809,7 +813,7 @@ def plot_comparison(
         critical_axis.set_ylim(*critical_ylim)
         critical_axis.set_title(
             f"{model.spec.label}\n" + r"critical curves (image plane)",
-            fontsize=13,
+            fontsize=panel_title_size,
         )
 
         model_reference = model.source_reference_theta
@@ -833,17 +837,27 @@ def plot_comparison(
 
         for axis in (psi_axis, caustic_axis, critical_axis):
             axis.set_aspect("equal", adjustable="box")
-            axis.tick_params(labelsize=10)
-        psi_axis.set_xlabel(r"image-plane $\theta_x$[arcsec]")
-        psi_axis.set_ylabel(r"image-plane $\theta_y$ [arcsec]")
-        caustic_axis.set_xlabel(r"source-plane $\beta_x$[arcsec]")
-        caustic_axis.set_ylabel(r"source-plane $\beta_y$[arcsec]")
-        critical_axis.set_xlabel(r"image-plane $\theta_x$[arcsec]")
-        critical_axis.set_ylabel(r"image-plane $\theta_y$ [arcsec]")
-    if psi_image is not None:
-        figure.colorbar(
-            psi_image, ax=axes[0, :].tolist(), shrink=0.86, label=r"$\psi$"
+            axis.tick_params(labelsize=tick_label_size)
+        psi_axis.set_xlabel(r"image-plane $\theta_x$[arcsec]", fontsize=axis_label_size)
+        psi_axis.set_ylabel(r"image-plane $\theta_y$ [arcsec]", fontsize=axis_label_size)
+        caustic_axis.set_xlabel(
+            r"source-plane $\beta_x$[arcsec]", fontsize=axis_label_size
         )
+        caustic_axis.set_ylabel(
+            r"source-plane $\beta_y$[arcsec]", fontsize=axis_label_size
+        )
+        critical_axis.set_xlabel(
+            r"image-plane $\theta_x$[arcsec]", fontsize=axis_label_size
+        )
+        critical_axis.set_ylabel(
+            r"image-plane $\theta_y$ [arcsec]", fontsize=axis_label_size
+        )
+    if psi_image is not None:
+        colorbar = figure.colorbar(
+            psi_image, ax=axes[0, :].tolist(), shrink=0.86
+        )
+        colorbar.set_label(r"$\psi$", fontsize=axis_label_size)
+        colorbar.ax.tick_params(labelsize=tick_label_size)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_paths: list[Path] = []
     cluster_key = next(key for key, value in CLUSTERS.items() if value == cluster)

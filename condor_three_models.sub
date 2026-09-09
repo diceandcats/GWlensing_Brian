@@ -1,0 +1,35 @@
+universe       = vanilla
+getenv         = True
+
+# This job uses the project and its 4+ GiB GCdata directory in place. The
+# submit and execute machines must therefore see the same filesystem.
+should_transfer_files = NO
+initialdir     = $ENV(HOME)/GWlensing_Brian
+
+executable     = $ENV(HOME)/GWlensing_Brian/run_three_models.sh
+arguments      = $(row)
+
+# HTCondor's quoted environment syntax separates entries with spaces.
+# Override PYTHON here if the required packages are not in the project .venv
+# or the execute node's python3 environment.
+environment    = "CSV=src_pos_tidy_xyz_copy.csv OUT_DIR=out_three_models REQUEST_CPUS=$(request_cpus) DE_PROCS=$(request_cpus) MCMC_PROCS=$(request_cpus)"
+
+request_cpus   = 16
+request_memory = 16 GB
+request_disk   = 8 GB
+requirements   = (TARGET.OpSys == "LINUX")
+
+# Create these directories once before submitting: mkdir -p logs out_three_models
+output         = logs/three_models_row$(row).out
+error          = logs/three_models_row$(row).err
+log            = logs/simulation_three_models.log
+
+# One representative source row for each of the six physical clusters.
+queue row from (
+0
+11
+21
+31
+41
+57
+)
