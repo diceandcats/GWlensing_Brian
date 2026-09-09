@@ -7,6 +7,7 @@ fix_z_imgs
 with_z
 outputs
 *.pdf
+.venv/
 
 ## Plots
 r_nondet_plots/
