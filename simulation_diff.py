@@ -85,6 +85,7 @@ MODELS = {
     "williams": ModelSpec("william", "williams", "v4"),
     "diego": ModelSpec("diego", "diego", "v4"),
     "keeton": ModelSpec("keeton", "keeton", "v4"),
+    "sharon": ModelSpec("sharon", "sharon", "v4"),
 }
 
 # Preserve the CATS coordinates used by the source catalog and simulation.py.

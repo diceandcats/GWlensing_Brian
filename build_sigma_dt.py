@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Build a Keeton best-fit psi map and a direct-ensemble sigma_dt map.
+"""Build a Sharon v4 best-fit psi map and a direct-ensemble sigma_dt map.
 
 Purpose
 -------
-The HFF Keeton v4 range products contain ~100 convergence (kappa) and scalar
+The HFF Sharon v4 range products contain ~100 convergence (kappa) and scalar
 shear-magnitude (gamma) maps, but no corresponding potential (psi) maps.  This
-script constructs a best-fit Keeton potential and estimates the time-delay
+script constructs a best-fit Sharon potential and estimates the time-delay
 uncertainty from the *realization-level Fermat-related quantity* rather than by
 propagating sigma_alpha and sigma_psi as independent errors.
 
@@ -23,7 +23,7 @@ The construction is
     psi_best = psi[kappa_best] + h_best,
 
 where h_best is a low-order harmonic correction (constant deflection + constant
-external shear) fitted to the official Keeton best-fit deflection maps.
+external shear) fitted to the official Sharon best-fit deflection maps.
 
 For the range ensemble,
 
@@ -64,43 +64,42 @@ realization-level Q_i fields for later pairwise calculations.
 
 Expected input layout
 ---------------------
-<keeton-dir>/
-    hlsp_frontier_model_<cluster>_keeton_v4_kappa.fits
-    hlsp_frontier_model_<cluster>_keeton_v4_x-arcsec-deflect.fits
-    hlsp_frontier_model_<cluster>_keeton_v4_y-arcsec-deflect.fits
-    [hlsp_frontier_model_<cluster>_keeton_v4_gamma*.fits]
+<sharon-dir>/
+    hlsp_frontier_model_<cluster>_sharon_v4_kappa.fits
+    hlsp_frontier_model_<cluster>_sharon_v4_x-arcsec-deflect.fits
+    hlsp_frontier_model_<cluster>_sharon_v4_y-arcsec-deflect.fits
+    [hlsp_frontier_model_<cluster>_sharon_v4_gamma*.fits]
     range/
-        ...keeton-map000..._kappa.fits
-        ...keeton-map000..._gamma.fits   # optional for this script
+        ...sharon-map000_v4_kappa.fits
+        ...sharon-map000_v4_gamma.fits   # optional for this script
         ...
 
 Outputs
 -------
 The output directory contains, among other diagnostics:
 
-    hlsp_frontier_model_<cluster>_keeton_v4_psi.fits
-    hlsp_frontier_model_<cluster>_keeton_v4_sigma_dt.fits
+    hlsp_frontier_model_<cluster>_sharon_v4_psi.fits
+    hlsp_frontier_model_<cluster>_sharon_v4_sigma_dt.fits
     sigma_dt_range_native.fits
     sigma_fermat_abs_range.fits
     fermat_anchor_range.fits
     summary.txt
     sigma_dt_diagnostics.png
 
-The production sigma_dt product is resampled onto the best-fit Keeton WCS/grid,
+The production sigma_dt product is resampled onto the best-fit Sharon WCS/grid,
 so simulation_diff.py does not need to infer the alignment from array shape.
 
 Example
 -------
 python build_keeton_sigma_dt.py \
-    --keeton-dir "GCdata/Abell 2744/keeton" \
-    --output-dir "keeton_sigma_dt/abell2744"
+    --sharon-dir "GCdata/Abell 2744/sharon"
 
-After inspecting the diagnostics, install the production products directly into
-the Keeton model directory:
+By default, all products are kept separate from the downloaded model files in
+<sharon-dir>/sigma_dt/.  After inspecting the diagnostics, they can optionally
+be installed directly into the Sharon model directory:
 
 python build_keeton_sigma_dt.py \
-    --keeton-dir "GCdata/Abell 2744/keeton" \
-    --output-dir "keeton_sigma_dt/abell2744" \
+    --sharon-dir "GCdata/Abell 2744/sharon" \
     --install
 """
 
@@ -124,7 +123,9 @@ from scipy.ndimage import map_coordinates
 from lenstronomy.LensModel.convergence_integrals import potential_from_kappa_grid
 
 
-MAP_ID_RE = re.compile(r"keeton-map(\d+)", re.IGNORECASE)
+MODEL = "sharon"
+VERSION = "v4"
+MAP_ID_RE = re.compile(r"sharon-map(\d+)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -150,9 +151,12 @@ class HarmonicCorrection:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--keeton-dir", type=Path, required=True)
+    p.add_argument("--sharon-dir", type=Path, required=True)
     p.add_argument("--range-dir", type=Path, default=None)
-    p.add_argument("--output-dir", type=Path, required=True)
+    p.add_argument(
+        "--output-dir", type=Path, default=None,
+        help="Output directory (default: <sharon-dir>/sigma_dt).",
+    )
     p.add_argument(
         "--edge-fraction", type=float, default=0.15,
         help="Trim fraction per edge for validation/summary statistics (default 0.15).",
@@ -201,7 +205,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--install", action="store_true",
-        help="Copy the production psi and sigma_dt FITS files into --keeton-dir.",
+        help="Copy the production psi and sigma_dt FITS files into --sharon-dir.",
     )
     p.add_argument(
         "--overwrite", action="store_true",
@@ -242,8 +246,8 @@ def read_map(path: Path) -> tuple[np.ndarray, fits.Header]:
 
 def find_unique(directory: Path, suffix: str, required: bool = True) -> Path | None:
     matches = [
-        p for p in directory.glob(f"*_{suffix}.fits")
-        if "keeton-map" not in p.name.lower()
+        p for p in directory.glob(f"*_{MODEL}_{VERSION}_{suffix}.fits")
+        if f"{MODEL}-map" not in p.name.lower()
     ]
     if len(matches) == 1:
         return matches[0]
@@ -261,14 +265,16 @@ def discover_range_kappas(range_dir: Path) -> list[tuple[str, Path]]:
     items: list[tuple[str, Path]] = []
     for path in range_dir.glob("*.fits"):
         lower = path.name.lower()
-        if not lower.endswith("_kappa.fits"):
+        if not lower.endswith(f"_{VERSION}_kappa.fits"):
             continue
         match = MAP_ID_RE.search(path.name)
         if match:
             items.append((match.group(1), path))
     items.sort(key=lambda item: int(item[0]))
     if not items:
-        raise FileNotFoundError(f"No keeton-mapXXX *_kappa.fits files in {range_dir}")
+        raise FileNotFoundError(
+            f"No {MODEL}-mapXXX *_{VERSION}_kappa.fits files in {range_dir}"
+        )
     return items
 
 
@@ -276,7 +282,7 @@ def count_paired_gamma(range_dir: Path, kappas: list[tuple[str, Path]]) -> int:
     gamma_ids: set[str] = set()
     for path in range_dir.glob("*.fits"):
         lower = path.name.lower()
-        if not lower.endswith("_gamma.fits") or lower.endswith("_gamma1.fits") or lower.endswith("_gamma2.fits"):
+        if not lower.endswith(f"_{VERSION}_gamma.fits"):
             continue
         match = MAP_ID_RE.search(path.name)
         if match:
@@ -504,7 +510,7 @@ def save_diagnostic_plot(
 ) -> None:
     fig, axes = plt.subplots(2, 2, figsize=(13, 11))
     items = [
-        (psi_best, "Validated best-fit Keeton psi [arcsec^2]"),
+        (psi_best, "Validated best-fit Sharon psi [arcsec^2]"),
         (q_anchor_range, "Q_anchor = 0.5|alpha|^2 - psi [arcsec^2]"),
         (sigma_q_range, "Direct ensemble sigma_Q [arcsec^2]"),
         (np.where(mask_range, sigma_dt_range, np.nan), "Fractional sigma_dt (central region)"),
@@ -531,19 +537,19 @@ def main() -> None:
     args = parse_args()
     rng = np.random.default_rng(args.seed)
 
-    keeton_dir = args.keeton_dir.resolve()
-    range_dir = (args.range_dir or (keeton_dir / "range")).resolve()
-    out = args.output_dir.resolve()
+    sharon_dir = args.sharon_dir.resolve()
+    range_dir = (args.range_dir or (sharon_dir / "range")).resolve()
+    out = (args.output_dir or (sharon_dir / "sigma_dt")).resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    if not keeton_dir.is_dir():
-        raise FileNotFoundError(f"Keeton directory does not exist: {keeton_dir}")
+    if not sharon_dir.is_dir():
+        raise FileNotFoundError(f"Sharon directory does not exist: {sharon_dir}")
     if not range_dir.is_dir():
         raise FileNotFoundError(f"Range directory does not exist: {range_dir}")
 
-    kappa_path = find_unique(keeton_dir, "kappa")
-    alpha_x_path = find_unique(keeton_dir, "x-arcsec-deflect")
-    alpha_y_path = find_unique(keeton_dir, "y-arcsec-deflect")
+    kappa_path = find_unique(sharon_dir, "kappa")
+    alpha_x_path = find_unique(sharon_dir, "x-arcsec-deflect")
+    alpha_y_path = find_unique(sharon_dir, "y-arcsec-deflect")
 
     kappa_best, best_header = read_map(kappa_path)
     alpha_x_best, ax_header = read_map(alpha_x_path)
@@ -558,7 +564,7 @@ def main() -> None:
     best_mask = edge_mask(kappa_best.shape, args.edge_fraction)
     x_best, y_best = coordinate_grids(kappa_best.shape, pix_best)
 
-    print("=== BEST-FIT KEETON POTENTIAL ===")
+    print("=== BEST-FIT SHARON V4 POTENTIAL ===")
     print(f"kappa: {kappa_path.name}")
     print(f"shape: {kappa_best.shape}")
     print(f"pixel scale: {pix_best:.8g} arcsec/pixel")
@@ -627,8 +633,8 @@ def main() -> None:
         best_header,
         "arcsec2",
         [
-            "Keeton psi reconstructed from best-fit kappa using lenstronomy FFT Green-function convolution.",
-            "Low-order harmonic correction fitted to official Keeton x/y deflection maps.",
+            "Sharon psi reconstructed from best-fit kappa using lenstronomy FFT Green-function convolution.",
+            "Low-order harmonic correction fitted to official Sharon x/y deflection maps.",
             f"Best-fit potential-difference validation relative RMS={dpsi_rms:.6g}.",
         ],
     )
@@ -840,7 +846,7 @@ def main() -> None:
         best_header,
         "dimensionless",
         [
-            "Keeton fractional time-delay uncertainty from direct realization-level Fermat scatter.",
+            "Sharon fractional time-delay uncertainty from direct realization-level Fermat scatter.",
             "Constructed from range kappa maps; scalar gamma is not used to modify psi.",
             "Candidate fields anchored to official best-fit alpha and validated best-fit psi.",
             "Affine gauge modes removed from each delta-kappa potential realization.",
@@ -867,9 +873,9 @@ def main() -> None:
     )
 
     summary = [
-        "Keeton direct-Fermat sigma_dt construction",
+        "Sharon v4 direct-Fermat sigma_dt construction",
         "==========================================",
-        f"keeton_dir: {keeton_dir}",
+        f"sharon_dir: {sharon_dir}",
         f"range_dir: {range_dir}",
         f"range_realizations: {count}",
         f"paired_scalar_gamma_maps_found: {paired_gamma_count}",
@@ -943,8 +949,8 @@ def main() -> None:
     )
 
     if args.install:
-        dst_psi = keeton_dir / psi_name
-        dst_sigma = keeton_dir / sigma_name
+        dst_psi = sharon_dir / psi_name
+        dst_sigma = sharon_dir / sigma_name
         install_product(psi_out, dst_psi, args.overwrite)
         install_product(sigma_out, dst_sigma, args.overwrite)
         print("\nInstalled production products:")

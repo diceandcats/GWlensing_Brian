@@ -1,9 +1,9 @@
-"""Simulate with CATS, then localize with CATS, diego and williams.
+"""Simulate with CATS, then localize with CATS, Keeton and Sharon.
 
     python simulation_three_models.py --row 0
 
 Accepted fits are stored as JSON lists
-in CATS_results, diego_results and williams_results, ordered by cluster.
+in CATS_results, Keeton_results and Sharon_results, ordered by cluster.
 Run status and output paths are stored in the three_model_* columns.
 """
 
@@ -36,8 +36,8 @@ import pandas as pd
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-MODEL_ORDER = ("cats", "diego", "williams")
-MODEL_LABELS = {"cats": "CATS", "diego": "diego", "williams": "williams"}
+MODEL_ORDER = ("cats", "keeton", "sharon")
+MODEL_LABELS = {"cats": "CATS", "keeton": "Keeton", "sharon": "Sharon"}
 # Each cluster/model pair gets its own index in the fitter.
 CANDIDATES = tuple(
     (cluster_index, model_name)
@@ -54,8 +54,8 @@ OUTPUT_DEFAULTS = {
     "three_model_results_file": "PENDING",
     "localization_model_order": json.dumps([MODEL_LABELS[name] for name in MODEL_ORDER]),
     "CATS_results": "[]",
-    "diego_results": "[]",
-    "williams_results": "[]",
+    "Keeton_results": "[]",
+    "Sharon_results": "[]",
 }
 
 
@@ -281,7 +281,7 @@ def main(argv=None):
             "n_walkers": 20,
             "n_steps": 20000,
             "burn_in_steps": BURN_IN_STEPS,
-            "fit_z": False,
+            "fit_z": True,
             "fit_hubble": False,
             "lum_dist_true": lum_dist_true,
             "sigma_lum": 0.1,
