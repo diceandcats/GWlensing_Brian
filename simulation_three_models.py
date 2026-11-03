@@ -18,6 +18,7 @@ from csv_lock import update_csv_row
 from lensing_data_class import LensingData
 from simulation_diff import (
     CLUSTERS,
+    limit_map_resolution,
     native_geometry,
     potential_unit_scale,
     product_path,
@@ -45,6 +46,7 @@ CANDIDATES = tuple(
     for model_name in MODEL_ORDER
 )
 BURN_IN_STEPS = 3000
+MAX_MAP_PIXELS = int(1600)
 
 OUTPUT_DEFAULTS = {
     "three_model_run_status": "STARTED",
@@ -103,10 +105,17 @@ def build_lensing_data():
                     flush=True,
                 )
         sigma_dt = resample_to_shape(sigma_dt, alpha_x.shape)
+        (alpha_x, alpha_y, psi, sigma_dt), effective_pixscale = (
+            limit_map_resolution(
+                (alpha_x, alpha_y, psi, sigma_dt),
+                geometry.pixscale,
+                MAX_MAP_PIXELS,
+            )
+        )
 
         ny, nx = alpha_x.shape
-        height = (ny - 1) * geometry.pixscale
-        width = (nx - 1) * geometry.pixscale
+        height = (ny - 1) * effective_pixscale
+        width = (nx - 1) * effective_pixscale
         if not 0 < geometry.x_center < width or not 0 < geometry.y_center < height:
             raise ValueError(f"search center is outside {cluster.key}/{model_name}")
         search_window = cluster.search_window
@@ -122,7 +131,7 @@ def build_lensing_data():
         alpha_y_maps.append(alpha_y)
         psi_maps.append(psi)
         sigma_dt_maps.append(sigma_dt)
-        pixscales.append(geometry.pixscale)
+        pixscales.append(effective_pixscale)
         x_centers.append(geometry.x_center)
         y_centers.append(geometry.y_center)
         search_windows.append(search_window)
@@ -130,7 +139,7 @@ def build_lensing_data():
         print(
             f"Candidate {candidate_index}: cluster {cluster_index}, "
             f"{MODEL_LABELS[model_name]}, shape={alpha_x.shape}, "
-            f"pixscale={geometry.pixscale:.6g}, "
+            f"pixscale={effective_pixscale:.6g}, "
             f"center=({geometry.x_center:.4g}, {geometry.y_center:.4g}) "
             f"[{geometry_note}], psi_scale={psi_scale:.7g}",
             flush=True,
@@ -269,6 +278,7 @@ def main(argv=None):
         cosmos = FlatLambdaCDM(H0=real_params["H0"], Om0=0.3)
         lum_dist_unlensed = cosmos.luminosity_distance(real_params["z_s"]).value
         mu = np.asarray(output["magnifications"], dtype=float)
+        cluster_system.clear_candidate_resources(simulation_index)
         # Same luminosity-distance convention as simulation.py.
         lum_dist_true = lum_dist_unlensed / np.abs(mu)
         print(f"True luminosity distance: {lum_dist_unlensed}")
@@ -324,6 +334,7 @@ def main(argv=None):
                 dt_true=dt_true,
                 mcmc_settings=mcmc_settings,
             )
+            cluster_system.clear_candidate_resources(candidate_index)
             corner_path, trace_path = "", ""
             if should_plot:
                 corner_path, trace_path = save_plots(

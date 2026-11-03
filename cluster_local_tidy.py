@@ -121,7 +121,7 @@ class ClusterLensingUtils:
 
         # Per-process bounded caches (LRU)
         self._buffers: List[Optional[Dict[str, np.ndarray]]] = [None] * len(self.data.z_l_list)
-        self._lm_cache_max = int(os.environ.get("LM_CACHE_MAX_PROC", "8"))
+        self._lm_cache_max = int(os.environ.get("LM_CACHE_MAX_PROC", "1"))
         self._lm_cache: List[OrderedDict] = [OrderedDict() for _ in range(len(self.data.z_l_list))]
         self._cosmo_cache_max = int(os.environ.get("COSMO_CACHE_MAX_PROC", "32"))
         self._cosmo_cache: OrderedDict = OrderedDict()
@@ -146,6 +146,11 @@ class ClusterLensingUtils:
                 "f_y": np.empty(shape, dtype=np.float32),
             }
         return self._buffers[index]
+
+    def clear_candidate_resources(self, index: int) -> None:
+        """Release map caches and buffers for a cluster candidate."""
+        self._lm_cache[index].clear()
+        self._buffers[index] = None
 
     def _get_cosmo(self, H0: float) -> FlatLambdaCDM:
         """
@@ -353,8 +358,8 @@ class ClusterLensing(ClusterLensingUtils):
 
         estop = default_settings.pop("early_stop_threshold", 0.03)
         if estop is not None:
-            def _cb(xk, conv):
-                return _de_objective_func_global(xk) < estop
+            def _cb(intermediate_result):
+                return intermediate_result.fun < estop
             default_settings["callback"] = _cb
 
         try:
@@ -481,6 +486,7 @@ class ClusterLensing(ClusterLensingUtils):
                 sigma_lum=sigma_lum,
                 de_settings=de_settings,
             )
+            self.clear_candidate_resources(i)
             results.append({"cluster_index": i, "de_params": best_params, "chi_sq": min_chi_sq})
             print(f"Cluster {i} DE best chi^2: {min_chi_sq:.3f} with params {best_params}", flush=True)
 
@@ -501,6 +507,7 @@ class ClusterLensing(ClusterLensingUtils):
                     sampler = self.run_mcmc_sampler(
                         dt_true, result["cluster_index"], result["de_params"], mcmc_settings
                     )
+                    self.clear_candidate_resources(result["cluster_index"])
                     result["mcmc_sampler"] = sampler
             results = [res for res in results if "mcmc_sampler" in res]
             # return the elements in results only if their chi_sq is less than 2 + best_result["chi_sq"]
@@ -520,6 +527,7 @@ class ClusterLensing(ClusterLensingUtils):
                 sigma_lum=sigma_lum,
                 lum_dist_true=lum_dist_true
                 )
+                self.clear_candidate_resources(cluster_idx)
                 result['chi_sq'] = chi_sq_median
             # filter results again based on the new chi_sq
             best_result_mcmc = min(results, key=lambda x: x["chi_sq"])
