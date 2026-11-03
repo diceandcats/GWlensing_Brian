@@ -13,12 +13,10 @@ cd "$SCRIPT_DIR"
 : "${CSV:?CSV must be set in the Condor submit file}"
 : "${OUT_DIR:=$SCRIPT_DIR/out_three_models}"
 
-# Make relative submit-file paths independent of the execute node's launch
-# directory.
 [[ "$CSV" = /* ]] || CSV="$SCRIPT_DIR/$CSV"
 [[ "$OUT_DIR" = /* ]] || OUT_DIR="$SCRIPT_DIR/$OUT_DIR"
 
-# Parallelism used by the underlying DE and MCMC process pools.
+# Parallelism used by DE and MCMC
 CONDOR_CPUS="${REQUEST_CPUS:-${PYTHON_CPU_COUNT:-${OMP_NUM_THREADS:-1}}}"
 : "${DE_PROCS:=$CONDOR_CPUS}"
 : "${MCMC_PROCS:=$CONDOR_CPUS}"
@@ -27,8 +25,6 @@ export OUT_DIR
 export DE_PROCS
 export MCMC_PROCS
 
-# Each sampler worker is a process. Keep numerical libraries single-threaded
-# so every worker does not create another complete set of threads.
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1

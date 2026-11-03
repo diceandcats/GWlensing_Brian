@@ -8,6 +8,8 @@ with_z
 outputs
 *.pdf
 .venv/
+logs/
+_pycache_/
 
 ## Plots
 r_nondet_plots/
