@@ -2,13 +2,14 @@ universe       = vanilla
 getenv         = True
 
 should_transfer_files = NO
-initialdir     = /home/dices/Research/GWlensing_Brian
+project_dir    = $Fp($(SUBMIT_FILE))
+initialdir     = $(project_dir)
 
-executable     = /home/dices/Research/GWlensing_Brian/run_mismatched_pairs.sh
+executable     = $(project_dir)run_mismatched_pairs.sh
 simulation_model = cats
-csv              = src_pos_tidy_xyz_$(simulation_model).csv
+csv              = model_mismatch_data/src_pos_tidy_xyz_$(simulation_model)_3img.csv
 arguments        = $(simulation_model) $(csv) $(cluster)
-environment    = "OUT_DIR=out_mismatched_models DE_PROCS=$(request_cpus) MCMC_PROCS=$(request_cpus)"
+environment    = "PYTHON=$ENV(HOME)/.venv/bin/python OUT_DIR=out_mismatched_models REQUEST_CPUS=$(request_cpus) DE_PROCS=$(request_cpus) MCMC_PROCS=$(request_cpus)"
 
 request_cpus   = 16
 request_memory = 10 GB
