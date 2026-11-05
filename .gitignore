@@ -10,6 +10,8 @@ outputs
 .venv/
 logs/
 _pycache_/
+out_marginalize_models/
+out_mismatched_models/
 
 ## Plots
 r_nondet_plots/

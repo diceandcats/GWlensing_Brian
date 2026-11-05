@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CSV="$2"
 [[ "$CSV" = /* ]] || CSV="$SCRIPT_DIR/$CSV"
 
-OUT_DIR="${OUT_DIR:-$SCRIPT_DIR/out_mismatched}"
+OUT_DIR="${OUT_DIR:-$SCRIPT_DIR/out_mismatched_models}"
 [[ "$OUT_DIR" = /* ]] || OUT_DIR="$SCRIPT_DIR/$OUT_DIR"
 export OUT_DIR
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1

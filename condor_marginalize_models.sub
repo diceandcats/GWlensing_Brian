@@ -1,0 +1,33 @@
+universe       = vanilla
+getenv         = True
+
+should_transfer_files = NO
+initialdir     = $ENV(HOME)/GWlensing_Brian
+
+executable     = $ENV(HOME)/GWlensing_Brian/run_marginalize_models.sh
+arguments      = $(row)
+
+environment    = "CSV=src_pos_tidy_xyz_copy.csv OUT_DIR=out_marginalize_models REQUEST_CPUS=$(request_cpus) DE_PROCS=$(request_cpus) MCMC_PROCS=$(request_cpus)"
+
+request_cpus   = 16
+request_memory = 10 GB
+request_disk   = 8 GB
+
+output         = logs/marginalize_models_row$(row).out
+error          = logs/marginalize_models_row$(row).err
+log            = logs/marginalize_models_row$(row).log
+
+queue row from (
+0
+5
+11
+17
+21
+28
+31
+33
+41
+42
+52
+57
+)

@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 : "${CSV:?CSV must be set in the Condor submit file}"
-: "${OUT_DIR:=$SCRIPT_DIR/out_three_models}"
+: "${OUT_DIR:=$SCRIPT_DIR/out_marginalize_models}"
 
 [[ "$CSV" = /* ]] || CSV="$SCRIPT_DIR/$CSV"
 [[ "$OUT_DIR" = /* ]] || OUT_DIR="$SCRIPT_DIR/$OUT_DIR"
@@ -43,7 +43,7 @@ fi
 mkdir -p "$OUT_DIR"
 
 echo "============================================================"
-echo "simulation_three_models.py"
+echo "simulation_marginalize_models.py"
 echo "Row        = $ROW"
 echo "CSV        = $CSV"
 echo "OUT_DIR    = $OUT_DIR"
@@ -52,6 +52,6 @@ echo "MCMC_PROCS = $MCMC_PROCS"
 echo "Python     = $PYTHON_BIN"
 echo "============================================================"
 
-exec "$PYTHON_BIN" -u "$SCRIPT_DIR/simulation_three_models.py" \
+exec "$PYTHON_BIN" -u "$SCRIPT_DIR/simulation_marginalize_models.py" \
     --csv "$CSV" \
     --row "$ROW"
