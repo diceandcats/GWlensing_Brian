@@ -405,6 +405,10 @@ class ClusterLensing(ClusterLensingUtils):
         n_steps = mcmc_settings.get("n_steps", 1000)
         sigma_lum = mcmc_settings.get("sigma_lum", 0.05)
         lum_dist_true = mcmc_settings.get("lum_dist_true")
+        check_interval = int(mcmc_settings.get("autocorr_check_interval", 0))
+        min_steps = int(mcmc_settings.get("min_steps", 0))
+        min_autocorr_times = float(mcmc_settings.get("min_autocorr_times", 50.0))
+        autocorr_rel_tol = float(mcmc_settings.get("autocorr_rel_tol", 0.01))
 
         bounds = {
             "x_src": mcmc_settings.get("x_bounds", (initial_params["x_src"] - 6, initial_params["x_src"] + 6)),
@@ -455,7 +459,26 @@ class ClusterLensing(ClusterLensingUtils):
 
             # tqdm -> STDOUT; update roughly once every 100s
             progress_kwargs = {"file": sys.stdout, "mininterval": 100.0}
-            sampler.run_mcmc(p0, n_steps, progress=True, progress_kwargs=progress_kwargs)
+            if check_interval <= 0:
+                sampler.run_mcmc(p0, n_steps, progress=True, progress_kwargs=progress_kwargs)
+            else:
+                old_tau = np.full(ndim, np.inf)
+                for _ in sampler.sample(
+                    p0, iterations=n_steps, progress=True, progress_kwargs=progress_kwargs
+                ):
+                    if sampler.iteration % check_interval:
+                        continue
+                    tau = sampler.get_autocorr_time(tol=0)
+                    stable = np.all(np.abs(old_tau - tau) / tau < autocorr_rel_tol)
+                    long_enough = np.all(tau * min_autocorr_times < sampler.iteration)
+                    if sampler.iteration >= min_steps and stable and long_enough:
+                        print(
+                            f"\n[MCMC] Converged after {sampler.iteration} steps "
+                            f"(tau={np.round(tau, 1).tolist()})",
+                            flush=True,
+                        )
+                        break
+                    old_tau = tau
 
         return sampler
 
